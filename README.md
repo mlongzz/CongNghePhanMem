@@ -160,4 +160,4 @@ Nếu bản làm việc không có `.git`, không khởi tạo lịch sử để
 - [Demo đã cập nhật ngày 01/11/2026](docs/DEMO_RELEASE_2026-11-01.md)
 - [Báo cáo sửa chữa, bằng chứng và điểm tham khảo](docs/REPAIR_ACCEPTANCE_REPORT.md)
 
-Workflow kiểm tra SQLite/PostgreSQL, frontend, E2E và Docker. [Lần chạy của commit `ceb59a1`](https://github.com/mlongzz/sgu_CongNghePhanMem/actions/runs/41191217605) đã đạt; commit mới phải có kết quả riêng trong PR. Chỉ tag `v*` sau khi tất cả job đạt mới publish image lên GHCR; chưa publish hoặc deploy production.
+[Workflow](.github/workflows/ci.yml) kiểm tra SQLite/PostgreSQL, frontend, E2E và Docker. Mỗi commit mới phải có kết quả riêng trong PR. Chỉ tag `v*` sau khi tất cả job đạt mới publish image lên GHCR; chưa publish hoặc deploy production.
