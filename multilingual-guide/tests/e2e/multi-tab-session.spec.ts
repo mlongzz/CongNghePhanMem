@@ -115,3 +115,43 @@ test('a tab that sees the shared session switch straight to another account adop
     await context.close();
   }
 });
+
+test('two tabs opened at the same time with an expired access token refresh only once and both stay signed in', async ({ browser, request }) => {
+  const email = unique('restore');
+  expect((await registerApi(request, 'Restore User', email, PASSWORD)).status()).toBe(201);
+  const tokens = await loginApi(request, email, PASSWORD);
+  const context = await browser.newContext({ storageState: storageStateFor(tokens) });
+  try {
+    const pages = [await context.newPage(), await context.newPage()];
+    let held = 0;
+    let releaseAll: () => void = () => {};
+    const bothHeld = new Promise<void>(resolve => { releaseAll = resolve; });
+    for (const page of pages) {
+      let expired = false;
+      await page.route(url => url.origin === API && url.pathname === '/users/me', async route => {
+        if (expired || route.request().headers().authorization !== `Bearer ${tokens.access_token}`) return route.continue();
+        expired = true;
+        held += 1;
+        if (held === 2) releaseAll();
+        await bothHeld;
+        await route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ detail: 'Could not validate credentials' }) });
+      });
+    }
+    const refreshes: number[] = [];
+    context.on('response', response => { if (new URL(response.url()).pathname === '/auth/refresh') refreshes.push(response.status()); });
+    await Promise.all(pages.map(page => page.goto(`${ORIGIN}/`)));
+    await bothHeld;
+    for (const page of pages) {
+      await expect(page).toHaveURL(`${ORIGIN}/`);
+      await expect(page.getByRole('tab', { name: /Khám phá/ })).toBeVisible();
+    }
+    await pages[0].waitForTimeout(1500);
+    expect(refreshes).toEqual([200]);
+    const access = await stored(pages[0], ACCESS_KEY);
+    expect(access).not.toBe(tokens.access_token);
+    expect(await stored(pages[1], ACCESS_KEY)).toBe(access);
+    expect((await request.get(`${API}/users/me`, { headers: { Authorization: `Bearer ${access}` } })).status()).toBe(200);
+  } finally {
+    await context.close();
+  }
+});
