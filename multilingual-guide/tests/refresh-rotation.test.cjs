@@ -32,5 +32,5 @@ test('retry after a failed profile request sends the new refresh token, not the 
 test('context refreshes only through the persisting helper',()=>{
   const ctx=fs.readFileSync('src/context/AppContext.tsx','utf8');
   assert.equal((ctx.match(/refreshTokens\(/g)||[]).length,0);
-  assert.equal((ctx.match(/rotateTokens\(refresh\)/g)||[]).length,2);
+  assert.equal((ctx.match(/rotateTokens\(/g)||[]).length,2);
 });

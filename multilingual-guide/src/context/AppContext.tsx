@@ -179,7 +179,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
   const expire = useCallback(() => { logout(); setSessionExpired(true); }, [logout, setSessionExpired]);
   const signOut = useCallback(() => { setSignedOutByUser(true); logout(); }, [logout, setSignedOutByUser]);
-  const loginWithTokens = useCallback(async (access: string, refresh: string, keepLoading = false) => {
+  const loginWithTokens = useCallback(async (access: string, refresh: string, options: { keepLoading?: boolean; persist?: boolean } = {}) => {
+    const { keepLoading = false, persist = true } = options;
     const seq = ++authSeq.current;
     setAuthLoading(true);
     try {
@@ -189,8 +190,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         throw e;
       });
       if (seq !== authSeq.current) return;
-      await Promise.all([writeSessionToken(access), writeRefreshToken(refresh || null)]);
+      if (!persist && (await getSessionToken()) !== access) return;
       if (seq !== authSeq.current) return;
+      if (persist) {
+        await Promise.all([writeSessionToken(access), writeRefreshToken(refresh || null)]);
+        if (seq !== authSeq.current) return;
+      }
       const storedLanguage = keepLoading ? await AsyncStorage.getItem(STORE_LANG).catch(() => null) : null;
       if (!tokenRef.current && !LANGS.some(l => l.key === storedLanguage) && LANGS.some(l => l.key === profile.language)) {
         saveLanguage(profile.language as Language);
@@ -210,7 +215,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const seq = authSeq.current;
         const adopt = async (access: string, refresh: string) => {
           if (seq !== authSeq.current) return null;
-          await loginWithTokens(access, refresh);
+          await loginWithTokens(access, refresh, { persist: false });
           return tokenRef.current;
         };
         recovery.current = withRefreshLock(async () => {
@@ -248,11 +253,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const access = await getSessionToken();
       if (access) {
         const refresh = (await getRefreshToken()) ?? '';
-        try { await loginWithTokens(access, refresh, true); }
+        try { await loginWithTokens(access, refresh, { keepLoading: true, persist: false }); }
         catch (e) {
           if (!(e instanceof ApiError) || e.status !== 401 || !refresh) throw e;
-          const result = await rotateTokens(refresh);
-          await loginWithTokens(result.access_token, result.refresh_token, true);
+          const next = await withRefreshLock(async () => {
+            const storedAccess = await getSessionToken();
+            const storedRefresh = await getRefreshToken();
+            if (!storedAccess && !storedRefresh) return null;
+            if (storedAccess && storedRefresh && storedAccess !== access) return { access: storedAccess, refresh: storedRefresh };
+            const result = await rotateTokens(storedRefresh ?? refresh);
+            return { access: result.access_token, refresh: result.refresh_token };
+          });
+          if (next) await loginWithTokens(next.access, next.refresh, { keepLoading: true, persist: false });
         }
       }
       setSessionUnverified(false);
@@ -284,7 +296,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           setPlayingId(null); setSpeechStatus('idle');
           saveAccountFavorites([]);
         }
-        void loginWithTokens(access, refresh ?? '').catch(() => logout({ revoke: false, keepStorage: true }));
+        void loginWithTokens(access, refresh ?? '', { persist: false }).catch(() => logout({ revoke: false, keepStorage: true }));
       }
     })();
   }), [logout, loginWithTokens, setSignedOutByUser]);
