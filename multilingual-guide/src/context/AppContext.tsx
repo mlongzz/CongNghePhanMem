@@ -161,7 +161,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     refreshRef.current = result.refresh_token;
     return result;
   }, []);
-  const logout = useCallback((options?: { revoke?: boolean }) => {
+  const logout = useCallback((options?: { revoke?: boolean; keepStorage?: boolean }) => {
     const refresh = options?.revoke === false ? null : refreshRef.current;
     refreshRef.current = null;
     setSessionNotice(''); setSessionUnverified(false);
@@ -172,7 +172,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     authSeq.current++;
     tokenRef.current = null;
     saveToken(null); saveAccountFavorites([]); setFavoritesLoading(false); setFavoriteError(""); setUser(null); setAdminToken(null); setAuthLoading(false);
-    void Promise.all([writeSessionToken(null), writeRefreshToken(null)]).catch(() => {});
+    if (!options?.keepStorage) void Promise.all([writeSessionToken(null), writeRefreshToken(null)]).catch(() => {});
     if (refresh) void revokeSession(refresh).catch(e => {
       if (!(e instanceof ApiError && e.status === 401)) setSessionNotice('Đã đăng xuất trên thiết bị. Chưa thu hồi được phiên trên máy chủ do lỗi kết nối.');
     });
@@ -268,16 +268,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const [access, refresh] = await Promise.all([getSessionToken(), getRefreshToken()]);
       const change = classifyStorageChange(tokenRef.current, access, refresh);
       if (change.kind === 'ignore' && access && access === tokenRef.current && refresh) refreshRef.current = refresh;
-      else if (change.kind === 'signed-out') { setSignedOutByUser(true); logout({ revoke: false }); }
+      else if (change.kind === 'signed-out') { setSignedOutByUser(true); logout({ revoke: false, keepStorage: true }); }
       else if (change.kind === 'rotated') {
         tokenRef.current = change.access;
         refreshRef.current = change.refresh || null;
         saveToken(change.access);
         setAdminToken(current => current ? change.access : null);
       } else if (change.kind === 'switched') {
-        if (tokenRef.current) logout({ revoke: false });
         setSignedOutByUser(false);
-        if (access) void loginWithTokens(access, refresh ?? '').catch(() => logout({ revoke: false }));
+        if (!access) return;
+        if (tokenRef.current) {
+          speechSeq.current++;
+          speechRequest.current?.abort();
+          player.current?.stop();
+          setPlayingId(null); setSpeechStatus('idle');
+          saveAccountFavorites([]);
+        }
+        void loginWithTokens(access, refresh ?? '').catch(() => logout({ revoke: false, keepStorage: true }));
       }
     })();
   }), [logout, loginWithTokens, setSignedOutByUser]);
