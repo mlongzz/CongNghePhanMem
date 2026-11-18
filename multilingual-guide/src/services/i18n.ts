@@ -350,6 +350,7 @@ const copy: Record<string, readonly [string, string, string]> = {
   'Đang tải…': ['Loading…', 'Chargement…', '読み込み中…'],
   'Tải lại': ['Refresh', 'Actualiser', '更新'],
   'Thử lại': ['Try again', 'Réessayer', '再試行'],
+  'Đang thử lại…': ['Retrying…', 'Nouvelle tentative…', '再試行中…'],
   'Hủy': ['Cancel', 'Annuler', 'キャンセル'],
   'Lưu': ['Save', 'Enregistrer', '保存'],
   'Đăng nhập': ['Sign in', 'Se connecter', 'ログイン'],
