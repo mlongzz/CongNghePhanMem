@@ -29,3 +29,19 @@ export async function getSessionToken(): Promise<string | null> { return read(AC
 export async function writeSessionToken(token: string | null): Promise<void> { write(ACCESS_KEY, token); }
 export async function getRefreshToken(): Promise<string | null> { return read(REFRESH_KEY); }
 export async function writeRefreshToken(token: string | null): Promise<void> { write(REFRESH_KEY, token); }
+
+type LockManager = { request: <T>(name: string, task: () => Promise<T>) => Promise<T> };
+
+export function withRefreshLock<T>(task: () => Promise<T>): Promise<T> {
+  const locks = typeof navigator !== 'undefined' ? (navigator as Navigator & { locks?: LockManager }).locks : undefined;
+  return locks?.request ? locks.request('mg-refresh', task) : task();
+}
+
+export function subscribeSessionStorage(listener: () => void): () => void {
+  if (typeof window === 'undefined') return () => {};
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === null || event.key === ACCESS_KEY || event.key === REFRESH_KEY) listener();
+  };
+  window.addEventListener('storage', onStorage);
+  return () => window.removeEventListener('storage', onStorage);
+}
