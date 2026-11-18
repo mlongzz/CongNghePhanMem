@@ -78,15 +78,14 @@ def test_forged_and_legacy_refresh_tokens_cannot_create_sessions(client):
     assert client.post('/auth/logout', json={'refresh_token': 'unsigned'}).status_code == 401
 
 
-def test_login_throttle_and_window_expiry_do_not_reveal_account_existence(client, monkeypatch):
+def test_account_lock_and_expiry_do_not_reveal_account_existence(client, monkeypatch):
     from app.services import login_throttle
-    monkeypatch.setattr(login_throttle, 'ACCOUNT_LIMIT', 2)
     clock = [2_000_000_001]
     monkeypatch.setattr(login_throttle.time, 'time', lambda: clock[0])
     register(client)
     for email in ['mixed.case@example.com', 'missing@example.com']:
-        responses = [login(client, email, 'Incorrect123!') for _ in range(3)]
-        assert [r.status_code for r in responses] == [401, 401, 429]
+        responses = [login(client, email, 'Incorrect123!') for _ in range(6)]
+        assert [r.status_code for r in responses] == [401, 401, 401, 401, 401, 429]
         assert responses[0].json()['detail'] == 'Invalid email or password'
         assert 1 <= int(responses[-1].headers['retry-after']) <= 300
     clock[0] += 301
@@ -105,7 +104,7 @@ def test_unknown_and_wrong_password_both_run_password_verification(client, monke
     assert all(value.startswith('$argon2') for value in calls)
 
 
-def test_admin_draft_route_publication_archiving_and_empty_route(client, admin_headers):
+def test_admin_draft_route_publication_archiving_and_empty_route(client, admin_headers, reader_headers):
     def place(name, status):
         result = client.post('/admin/places', headers=admin_headers,
                              json={'name': name, 'latitude': 10, 'longitude': 106, 'publication_status': status})
@@ -115,21 +114,21 @@ def test_admin_draft_route_publication_archiving_and_empty_route(client, admin_h
     created = client.post('/admin/journeys', headers=admin_headers, json={'name': 'Route', 'place_ids': [b, draft, a]})
     assert created.status_code == 201
     jid = created.json()['id']
-    for data in [client.get(f'/journeys/{jid}').json(), client.get('/journeys').json()[0]]:
+    for data in [client.get(f'/journeys/{jid}', headers=reader_headers).json(), client.get('/journeys', headers=reader_headers).json()[0]]:
         assert data['place_ids'] == [b, a]
         assert [p['id'] for p in data['stops']] == [b, a]
         assert 'Private draft' not in str(data)
     assert client.put(f'/admin/places/{draft}', headers=admin_headers, json={'publication_status': 'published'}).status_code == 200
-    assert client.get(f'/journeys/{jid}').json()['place_ids'] == [b, draft, a]
+    assert client.get(f'/journeys/{jid}', headers=reader_headers).json()['place_ids'] == [b, draft, a]
     assert client.delete(f'/admin/places/{draft}', headers=admin_headers).status_code == 204
     assert client.put(f'/admin/journeys/{jid}', headers=admin_headers, json={'name': 'Route', 'place_ids': [draft]}).status_code == 422
-    assert client.get(f'/journeys/{jid}').json()['place_ids'] == [b, a]
+    assert client.get(f'/journeys/{jid}', headers=reader_headers).json()['place_ids'] == [b, a]
     empty = client.post('/admin/journeys', headers=admin_headers, json={'name': 'Empty', 'place_ids': []}).json()
-    assert client.get(f"/journeys/{empty['id']}").json()['stops'] == []
-    assert client.get('/journeys/999999').status_code == 404
+    assert client.get(f"/journeys/{empty['id']}", headers=reader_headers).json()['stops'] == []
+    assert client.get('/journeys/999999', headers=reader_headers).status_code == 404
 
 
-def test_public_journey_page_has_constant_query_count(client, db_session):
+def test_public_journey_page_has_constant_query_count(client, db_session, reader_headers):
     for number in range(20):
         point = Place(name=f'Point {number}', latitude=10, longitude=106)
         row = Journey(name=f'Route {number}', description='')
@@ -139,11 +138,11 @@ def test_public_journey_page_has_constant_query_count(client, db_session):
     statements = []
     connection = db_session.connection()
     def capture(conn, cursor, statement, parameters, context, many):
-        if statement.lstrip().upper().startswith('SELECT'):
+        if statement.lstrip().upper().startswith('SELECT') and 'FROM users' not in statement:
             statements.append(statement)
     event.listen(connection, 'before_cursor_execute', capture)
     try:
-        response = client.get('/journeys?limit=20')
+        response = client.get('/journeys?limit=20', headers=reader_headers)
     finally:
         event.remove(connection, 'before_cursor_execute', capture)
     assert response.status_code == 200 and len(response.json()) == 20

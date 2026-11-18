@@ -10,7 +10,7 @@ from app.routers.auth import create_access_token
 from app.services import source_metadata
 
 
-def test_noop_place_and_guide_preserve_publication(client, admin_headers):
+def test_noop_place_and_guide_preserve_publication(client, admin_headers, reader_headers):
     place = client.post('/admin/places', headers=admin_headers, json={'name':'Published no-op', 'latitude':10,'longitude':106,'publication_status':'published'}).json()
     path = f"/admin/places/{place['id']}"
     assert client.put(path, headers=admin_headers, json={'name':place['name'], 'description':None, 'latitude':10,'longitude':106}).json()['publication_status'] == 'published'
@@ -18,7 +18,7 @@ def test_noop_place_and_guide_preserve_publication(client, admin_headers):
     guide = {'title':'Reviewed fixture','content':'Same reviewed content','publication_status':'published'}
     assert client.put(guide_path, headers=admin_headers,json=guide).status_code == 200
     assert client.put(guide_path, headers=admin_headers,json=guide).json()['publication_status'] == 'published'
-    assert client.get(f"/places/{place['id']}/guide-content?language=vi").status_code == 200
+    assert client.get(f"/places/{place['id']}/guide-content?language=vi", headers=reader_headers).status_code == 200
 
 
 def test_effective_admin_source_is_distinct_from_database_role(client, db_session, monkeypatch):
@@ -38,7 +38,7 @@ def test_effective_admin_source_is_distinct_from_database_role(client, db_sessio
     assert client.get('/admin/users',headers=headers).status_code==403
 
 
-def test_published_summaries_use_two_queries_and_never_leak_draft_languages(client, db_session):
+def test_published_summaries_use_two_queries_and_never_leak_draft_languages(client, db_session, reader_headers):
     for i in range(10):
         p=Place(name=f'Summary {i}',latitude=10,longitude=106,publication_status='published')
         db_session.add(p); db_session.flush()
@@ -47,10 +47,10 @@ def test_published_summaries_use_two_queries_and_never_leak_draft_languages(clie
     db_session.commit()
     queries=[]
     def capture(conn,cursor,statement,parameters,context,executemany):
-        if statement.lstrip().upper().startswith('SELECT'): queries.append(statement)
+        if statement.lstrip().upper().startswith('SELECT') and 'FROM users' not in statement: queries.append(statement)
     bind=db_session.get_bind()
     event.listen(bind,'before_cursor_execute',capture)
-    try: response=client.get('/places?limit=100')
+    try: response=client.get('/places?limit=100', headers=reader_headers)
     finally: event.remove(bind,'before_cursor_execute',capture)
     assert response.status_code==200 and len(response.json())==10
     assert len(queries)==2

@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.config import UPLOAD_DIR
 from app.database import get_db
-from app.dependencies import get_current_admin
+from app.dependencies import get_current_admin, get_current_user
 from app.models.admin import AuditLog
 from app.models.place import Place
 from app.models.place_image import PlaceImage
@@ -99,7 +99,7 @@ def image_value(row):
     return {key: getattr(row, key) for key in ('id', 'place_id', 'url', 'source_url', 'attribution', 'license', 'status', 'position', 'created_at', 'reviewed_at', 'thumbnail_url', 'width', 'height', 'health_status', 'health_checked_at', 'health_error', 'story')}
 
 
-@router.get('/places/{place_id}/images')
+@router.get('/places/{place_id}/images', dependencies=[Depends(get_current_user)])
 def public_images(place_id: int, db: Session = Depends(get_db)):
     if not get_place_by_id(db, place_id): raise HTTPException(404, 'Place not found')
     return [image_value(row) for row in db.query(PlaceImage).filter_by(place_id=place_id, status='approved').order_by(PlaceImage.position, PlaceImage.id).all()]

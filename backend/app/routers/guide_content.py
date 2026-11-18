@@ -5,7 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import get_current_admin
+from app.dependencies import get_current_admin, get_current_user
 from app.models.admin import AuditLog
 from app.models.place import Place
 from app.models.user import User
@@ -30,14 +30,14 @@ from app.services.place_service import get_place_by_id
 router = APIRouter(prefix="/places", tags=["Guide Content"])
 
 
-@router.get("/{place_id}/guide-content/languages", response_model=list[str])
+@router.get("/{place_id}/guide-content/languages", response_model=list[str], dependencies=[Depends(get_current_user)])
 def get_available_guide_languages(place_id: int, db: Session = Depends(get_db)):
     if not get_place_by_id(db, place_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Place not found")
     return list_guide_languages(db, place_id)
 
 
-@router.get("/{place_id}/guide-content", response_model=PublicGuideContentResponse)
+@router.get("/{place_id}/guide-content", response_model=PublicGuideContentResponse, dependencies=[Depends(get_current_user)])
 def get_place_guide_content(
     place_id: int,
     language: str = Query(min_length=2, max_length=10),

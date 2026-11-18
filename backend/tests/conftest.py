@@ -55,3 +55,13 @@ def db_session():
         session.close()
         Base.metadata.drop_all(bind=engine)
         engine.dispose()
+
+
+@pytest.fixture
+def reader_headers(db_session):
+    from app.models.user import User
+    from app.routers.auth import create_access_token
+    reader = User(email="reader.fixture@example.com", password_hash="unused", full_name="Reader Fixture", role="user")
+    db_session.add(reader)
+    db_session.commit()
+    return {"Authorization": "Bearer " + create_access_token(reader.id)}

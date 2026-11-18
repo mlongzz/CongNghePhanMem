@@ -14,7 +14,7 @@ from app.services.search_utils import contains
 router = APIRouter(tags=['Presence'])
 
 
-@router.get('/presence/policy')
+@router.get('/presence/policy', dependencies=[Depends(get_current_user)])
 def policy():
     return service.policy()
 
