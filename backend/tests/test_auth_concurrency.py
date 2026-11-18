@@ -79,3 +79,70 @@ def test_refresh_rotation_has_only_one_concurrent_winner(sessions):
     with ThreadPoolExecutor(max_workers=2) as executor:
         results = list(executor.map(refresh, range(2)))
     assert sorted(status for status, _ in results) == [200, 401]
+
+
+def test_parallel_wrong_passwords_cannot_bypass_the_account_lock(sessions):
+    from types import SimpleNamespace
+    from app.models.user import User
+    from app.routers.auth import login
+    from app.schemas.user import LoginRequest
+    from app.services import login_throttle
+    from app.services.user_service import _password_hash
+    email = 'parallel-lock@example.com'
+    good = 'GoodPass123'
+    with sessions() as db:
+        db.add(User(email=email, password_hash=_password_hash.hash(good), full_name='Lock'))
+        db.commit()
+    barrier = Barrier(30)
+
+    def attempt(index):
+        request = SimpleNamespace(client=SimpleNamespace(host=f'10.0.0.{index}'))
+        with sessions() as db:
+            barrier.wait(timeout=30)
+            try:
+                response = login(LoginRequest(email=email, password='WrongPass123'), request, db)
+                return response.status_code
+            except HTTPException as error:
+                return error.status_code
+
+    with ThreadPoolExecutor(max_workers=30) as executor:
+        results = list(executor.map(attempt, range(30)))
+    assert results.count(401) <= login_throttle.LOCK_FAILURES
+    assert results.count(401) + results.count(429) == 30
+    with sessions() as db:
+        assert login_throttle.lock_retry_after(db, email) > 0
+        request = SimpleNamespace(client=SimpleNamespace(host='10.0.1.1'))
+        response = login(LoginRequest(email=email, password=good), request, db)
+        assert response.status_code == 429
+        assert login_throttle.lock_retry_after(db, email) > 0
+
+
+def test_parallel_correct_login_during_failures_keeps_the_lock(sessions):
+    from types import SimpleNamespace
+    from app.models.user import User
+    from app.routers.auth import login
+    from app.schemas.user import LoginRequest
+    from app.services import login_throttle
+    from app.services.user_service import _password_hash
+    email = 'parallel-mixed@example.com'
+    good = 'GoodPass123'
+    with sessions() as db:
+        db.add(User(email=email, password_hash=_password_hash.hash(good), full_name='Mixed'))
+        db.commit()
+    barrier = Barrier(31)
+
+    def attempt(index):
+        request = SimpleNamespace(client=SimpleNamespace(host=f'10.0.2.{index}'))
+        password = good if index == 30 else 'WrongPass123'
+        with sessions() as db:
+            barrier.wait(timeout=30)
+            try:
+                return login(LoginRequest(email=email, password=password), request, db).status_code
+            except HTTPException as error:
+                return error.status_code
+
+    with ThreadPoolExecutor(max_workers=31) as executor:
+        results = list(executor.map(attempt, range(31)))
+    assert results.count(401) <= login_throttle.LOCK_FAILURES
+    with sessions() as db:
+        assert login_throttle.lock_retry_after(db, email) > 0

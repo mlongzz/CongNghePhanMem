@@ -156,3 +156,56 @@ def test_strong_password_boundaries_are_accepted_and_login_skips_the_rule(client
     assert register(client, "min@example.com", "Abcdef12").status_code == 201
     assert register(client, "max@example.com", "A1" + "a" * 126).status_code == 201
     assert login(client, "min@example.com", "abc").status_code == 401
+
+
+PUBLIC_GET_PATHS = {
+    "/", "/health/live", "/health/ready", "/docs", "/docs/oauth2-redirect", "/redoc", "/openapi.json",
+    "/media/{name}",
+}
+
+
+def _flatten_routes(routes):
+    for route in routes:
+        nested = getattr(route, "original_router", None)
+        if nested is not None:
+            yield from _flatten_routes(nested.routes)
+        else:
+            yield route
+
+
+def test_every_non_public_get_route_rejects_anonymous_requests(client):
+    import re
+    checked = []
+    for route in _flatten_routes(app.routes):
+        if "GET" not in (getattr(route, "methods", None) or ()) or route.path in PUBLIC_GET_PATHS:
+            continue
+        path = re.sub(r"\{[^}]+\}", "1", route.path)
+        assert client.get(path).status_code == 401, route.path
+        checked.append(route.path)
+    assert len(checked) >= 15
+
+
+def test_successful_login_does_not_clear_an_existing_lock(client, clock, db_session):
+    register(client)
+    fail(client, 5)
+    login_throttle.release_login_attempt(db_session, "gate@example.com")
+    assert login_throttle.lock_retry_after(db_session, "gate@example.com") > 0
+    assert login(client).status_code == 429
+    assert fail(client, 1) == [429]
+
+
+def test_reservations_beyond_the_limit_are_rejected_before_verification(client, clock, db_session):
+    register(client)
+    for expected in range(1, login_throttle.LOCK_FAILURES + 1):
+        assert login_throttle.reserve_login_attempt(db_session, "gate@example.com") == expected
+    with pytest.raises(login_throttle.LoginRejected) as rejected:
+        login_throttle.reserve_login_attempt(db_session, "gate@example.com")
+    assert rejected.value.code == "login_locked" and rejected.value.retry_after > 0
+    assert login(client).status_code == 429
+
+
+def test_logout_revokes_the_old_refresh_token(client):
+    register(client)
+    tokens = login(client).json()
+    assert client.post("/auth/logout", json={"refresh_token": tokens["refresh_token"]}).status_code == 204
+    assert client.post("/auth/refresh", json={"refresh_token": tokens["refresh_token"]}).status_code == 401
