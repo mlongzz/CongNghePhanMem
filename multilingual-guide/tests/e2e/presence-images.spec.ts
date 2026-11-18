@@ -1,9 +1,12 @@
 import { test, expect, type Page } from '@playwright/test';
+import { GUEST_STATE } from './auth';
+
+test.use({ storageState: GUEST_STATE });
 const api='http://127.0.0.1:8765';
 async function login(page:Page,email:string){
   await page.goto('/login');await page.getByLabel('Địa chỉ email',{exact:true}).fill(email);await page.getByLabel('Mật khẩu',{exact:true}).fill('TestPassword123!');await page.getByRole('button',{name:'Đăng nhập',exact:true}).click();
 }
-test('real presence across tabs, Admin dashboard, own deletion and persistent opt-out',async({page,context,request})=>{
+test('real presence across tabs, Admin dashboard, own deletion and persistent opt-out',async({page,context,request,browser})=>{
   const email=`presence-${Date.now()}@example.com`;
   await request.post(api+'/users',{data:{email,password:'TestPassword123!',full_name:'Presence browser fixture',language:'vi'}});
   const member=await (await request.post(api+'/auth/login',{data:{email,password:'TestPassword123!'}})).json();
@@ -13,12 +16,12 @@ test('real presence across tabs, Admin dashboard, own deletion and persistent op
   await login(page,email);await started;
   await expect(page.getByText('Ứng dụng ghi nhận thời gian hoạt động, không ghi GPS hay nội dung nhập.')).toBeVisible();
   const second=await context.newPage();
-  await second.addInitScript(tokens=>{sessionStorage.setItem('mg_access_token_v3',tokens.access_token);sessionStorage.setItem('mg_refresh_token_v3',tokens.refresh_token);},member);
+  await second.addInitScript(tokens=>{localStorage.setItem('mg_access_token_v3',tokens.access_token);localStorage.setItem('mg_refresh_token_v3',tokens.refresh_token);},member);
   const next=second.waitForResponse(response=>response.url().endsWith('/presence/start')&&response.status()===200);
   await second.goto('/');await next;
   await expect.poll(async()=>{const data=await(await request.get(api+'/admin/presence?q='+encodeURIComponent(email),{headers:auth})).json();return data.items[0]?.active_sessions;}).toBe(2);
-  const dashboard=await context.newPage();
-  await dashboard.addInitScript(tokens=>{sessionStorage.setItem('mg_access_token_v3',tokens.access_token);sessionStorage.setItem('mg_refresh_token_v3',tokens.refresh_token);},admin);
+  const adminContext=await browser.newContext({storageState:GUEST_STATE});const dashboard=await adminContext.newPage();
+  await dashboard.addInitScript(tokens=>{localStorage.setItem('mg_access_token_v3',tokens.access_token);localStorage.setItem('mg_refresh_token_v3',tokens.refresh_token);},admin);
   await dashboard.goto('/admin');await dashboard.getByText('Online & hoạt động',{exact:true}).click();
   await expect(dashboard.getByTestId('presence-dashboard')).toBeVisible();await expect(dashboard.getByTestId('presence-chart')).toBeVisible();
   await dashboard.getByLabel('Tìm người dùng Presence').fill(email);
@@ -37,7 +40,7 @@ test('real presence across tabs, Admin dashboard, own deletion and persistent op
   await page.reload();await expect(page.getByRole('button',{name:'Bật theo dõi hoạt động',exact:true})).toBeVisible();
   const users=await(await request.get(api+'/admin/presence?q='+encodeURIComponent(email),{headers:auth})).json();
   const detail=await(await request.get(api+'/admin/presence/users/'+users.items[0].id,{headers:auth})).json();expect(detail.total).toBe(0);
-  await second.close();await dashboard.close();
+  await second.close();await dashboard.close();await adminContext.close();
 });
 
 test('Image Manager drag/drop, duplicate detection, URL error, source suggestions and multi-POI navigation',async({page,request})=>{

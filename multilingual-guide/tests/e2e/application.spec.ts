@@ -1,6 +1,9 @@
 /// <reference types="node" />
 import { test, expect } from '@playwright/test';
 import { Buffer } from 'node:buffer';
+import { GUEST_STATE, VIEWER_EMAIL, VIEWER_PASSWORD, loginApi, seedTokens } from './auth';
+
+test.use({ storageState: GUEST_STATE });
 
 test.beforeEach(async ({ page }) => {
   // External map/photo providers are outside this local integration test.
@@ -102,21 +105,26 @@ test('expired access token refreshes, invalid refresh clears the session', async
   const result = await request.post('http://127.0.0.1:8765/auth/login', { data: { email: 'admin@e2e.example.com', password: 'TestPassword123!' } });
   const tokens = await result.json();
   await page.goto('/login');
-  await page.evaluate(refresh => { sessionStorage.setItem('mg_access_token_v3', 'expired-access'); sessionStorage.setItem('mg_refresh_token_v3', refresh); }, tokens.refresh_token);
+  await page.evaluate(refresh => { localStorage.setItem('mg_access_token_v3', 'expired-access'); localStorage.setItem('mg_refresh_token_v3', refresh); }, tokens.refresh_token);
   await page.goto('/admin');
   await expect(page.getByText('Hệ thống thuyết minh của bạn', { exact: true })).toBeVisible();
-  await page.evaluate(() => { sessionStorage.setItem('mg_access_token_v3', 'expired-access'); sessionStorage.setItem('mg_refresh_token_v3', 'expired-refresh'); });
+  await page.evaluate(() => { localStorage.setItem('mg_access_token_v3', 'expired-access'); localStorage.setItem('mg_refresh_token_v3', 'expired-refresh'); });
   await page.reload();
-  await expect(page).toHaveURL(/\/login$/);
-  await expect.poll(() => page.evaluate(() => sessionStorage.getItem('mg_refresh_token_v3'))).toBe(null);
+  await expect(page).toHaveURL(/\/login\?redirect=%2Fadmin$/);
+  await expect(page.getByRole('alert').filter({ hasText: 'Phiên đăng nhập đã hết hạn' })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('mg_refresh_token_v3'))).toBe(null);
 });
 
-test('GPS search uses actual coordinates and offline login shows an actionable error', async ({ page, context }) => {
+test('GPS search uses actual coordinates for a signed-in user', async ({ page, context, request }) => {
+  await seedTokens(context, await loginApi(request, VIEWER_EMAIL, VIEWER_PASSWORD));
   await context.grantPermissions(['geolocation']);
   await context.setGeolocation({ latitude: 10.7764, longitude: 106.6993, accuracy: 5 });
   await page.goto('/map');
   await page.getByRole('button', { name: 'Dùng GPS và tìm địa danh', exact: true }).click();
   await expect(page.getByText('Browser Test Museum', { exact: true }).first()).toBeVisible();
+});
+
+test('offline login shows an actionable error', async ({ page }) => {
   await page.goto('/login');
   await page.route('http://127.0.0.1:8765/auth/login', route => route.abort());
   await page.getByLabel('Địa chỉ email', { exact: true }).fill('anyone@example.com');

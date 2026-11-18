@@ -1,4 +1,7 @@
 import { test, expect } from '@playwright/test';
+import { GUEST_STATE } from './auth';
+
+test.use({ storageState: GUEST_STATE });
 
 // All mutations use the isolated SQLite backend created by run-e2e.cjs.
 test('admin creates a draft, publishes, archives and restores without losing its record', async ({ page, request }) => {

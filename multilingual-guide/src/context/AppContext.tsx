@@ -26,6 +26,8 @@ import { LANGUAGE_STORAGE_KEY } from '../hooks/useStoredLanguage';
 import { freshGps } from '../services/discoveryStatus';
 import { acceptGpsFix } from '../services/gpsTracking';
 
+// The provider can remount during route changes on web; how the session ended must survive that.
+const exitState = { expired: false, signedOut: false };
 const STORE_FAVORITES = "mg_favorites_v2";
 const STORE_LANG = LANGUAGE_STORAGE_KEY;
 const STORE_DRAFTS = "mg_guide_drafts_v3";
@@ -143,8 +145,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserResponse | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [sessionNotice, setSessionNotice] = useState('');
-  const [sessionExpired, setSessionExpired] = useState(false);
-  const [signedOutByUser, setSignedOutByUser] = useState(false);
+  const [sessionExpired, saveSessionExpired] = useState(() => exitState.expired);
+  const [signedOutByUser, saveSignedOutByUser] = useState(() => exitState.signedOut);
+  const setSessionExpired = useCallback((value: boolean) => { exitState.expired = value; saveSessionExpired(value); }, []);
+  const setSignedOutByUser = useCallback((value: boolean) => { exitState.signedOut = value; saveSignedOutByUser(value); }, []);
   const [sessionUnverified, setSessionUnverified] = useState(false);
   const speechSeq = useRef(0);
   const authSeq = useRef(0);
@@ -173,8 +177,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!(e instanceof ApiError && e.status === 401)) setSessionNotice('Đã đăng xuất trên thiết bị. Chưa thu hồi được phiên trên máy chủ do lỗi kết nối.');
     });
   }, []);
-  const expire = useCallback(() => { logout(); setSessionExpired(true); }, [logout]);
-  const signOut = useCallback(() => { setSignedOutByUser(true); logout(); }, [logout]);
+  const expire = useCallback(() => { logout(); setSessionExpired(true); }, [logout, setSessionExpired]);
+  const signOut = useCallback(() => { setSignedOutByUser(true); logout(); }, [logout, setSignedOutByUser]);
   const loginWithTokens = useCallback(async (access: string, refresh: string, keepLoading = false) => {
     const seq = ++authSeq.current;
     setAuthLoading(true);
@@ -187,7 +191,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (seq !== authSeq.current) return;
       await Promise.all([writeSessionToken(access), writeRefreshToken(refresh || null)]);
       if (seq !== authSeq.current) return;
-      if (!tokenRef.current && LANGS.some(l => l.key === profile.language)) {
+      const storedLanguage = keepLoading ? await AsyncStorage.getItem(STORE_LANG).catch(() => null) : null;
+      if (!tokenRef.current && !LANGS.some(l => l.key === storedLanguage) && LANGS.some(l => l.key === profile.language)) {
         saveLanguage(profile.language as Language);
         void AsyncStorage.setItem(STORE_LANG, profile.language).catch(() => {});
       }
@@ -196,7 +201,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setSessionNotice(''); setSessionUnverified(false); setSessionExpired(false); setSignedOutByUser(false);
       saveToken(access); setUser(profile); setAdminToken(admin.enabled ? access : null);
     } finally { if (seq === authSeq.current && !keepLoading) setAuthLoading(false); }
-  }, []);
+  }, [setSessionExpired, setSignedOutByUser]);
   useEffect(() => {
     setSessionRecovery(async failed => {
       if (!tokenRef.current) return null;
