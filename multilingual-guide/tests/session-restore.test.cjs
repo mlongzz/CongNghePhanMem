@@ -19,8 +19,9 @@ test('context keeps the session unverified, retries on focus and online, and adm
   assert.ok(ctx.includes('setSessionUnverified(true)'));
   assert.ok(ctx.includes("addEventListener('online'"));
   assert.ok(ctx.includes("NativeAppState.addEventListener('change'"));
-  const admin=fs.readFileSync('app/admin.tsx','utf8');
-  assert.ok(admin.indexOf('sessionUnverified')<admin.indexOf('<Redirect href="/login"'));
+  const gate=fs.readFileSync('src/components/AuthGate.tsx','utf8');
+  assert.ok(gate.includes('onAuthPage || sessionUnverified ? null'));
+  assert.ok(gate.indexOf('sessionUnverified && !onAuthPage')<gate.indexOf('if (destination) return'));
 });
 test('every session notice set by the context has vi/en/fr/ja copy',()=>{
   const ctx=fs.readFileSync('src/context/AppContext.tsx','utf8');

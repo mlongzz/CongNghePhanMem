@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { Redirect } from 'expo-router';
 import { Text, View } from 'react-native';
 import { Screen, LoadingState, ErrorMessage, panel } from '../src/components/Screen';
 import { AuthTextField, PrimaryButton, LanguageSelector } from '../src/components/auth';
@@ -11,7 +10,7 @@ import PresencePrivacy from '../src/components/PresencePrivacy';
 
 function AccountForm() {
   const { t } = useI18n();
-  const { token, user, authLoading, setLanguage, updateProfile } = useApp();
+  const { token, user, setLanguage, updateProfile } = useApp();
   const [name, setName] = useState(user?.full_name ?? ''); const [email, setEmail] = useState(user?.email ?? ''); const [language, chooseLanguage] = useState(user?.language ?? 'vi');
   const [busy, setBusy] = useState(false); const [error, setError] = useState(''); const [notice, setNotice] = useState('');
   const save = async () => {
@@ -24,8 +23,7 @@ function AccountForm() {
     } catch (e) { setError(e instanceof Error ? e.message : 'Không lưu được hồ sơ.'); }
     finally { setBusy(false); }
   };
-  if (authLoading) return <LoadingState />;
-  if (!token) return <Redirect href="/login" />;
+  if (!token) return <LoadingState />;
   return <Screen title="Hồ sơ tài khoản"><View style={panel}>
     <AuthTextField label="Họ và tên" value={name} onChangeText={setName} autoComplete="name" autoCapitalize="words" editable={!busy} />
     <AuthTextField label="Email" value={email} onChangeText={setEmail} autoComplete="email" keyboardType="email-address" editable={!busy} />
@@ -36,8 +34,7 @@ function AccountForm() {
 }
 
 export default function Account() {
-  const { user, token, authLoading } = useApp();
-  if (authLoading) return <LoadingState />;
-  if (!token || !user) return <Redirect href="/login" />;
+  const { user, token } = useApp();
+  if (!token || !user) return <LoadingState />;
   return <AccountForm key={user.id} />;
 }

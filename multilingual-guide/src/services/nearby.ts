@@ -5,7 +5,7 @@
  *   descriptions and linked Wikipedia articles can supply attributed narration.
  */
 import type { Category, Language, Place, Translated } from "../data/places";
-import { API_BASE_URL, apiFetch } from "./api";
+import { API_BASE_URL, apiFetch, fetchWithAccount } from "./api";
 
 export type Coordinates = { latitude: number; longitude: number };
 export type NearbyResult = {
@@ -325,7 +325,7 @@ async function queryOsmBackend(location: Coordinates, radiusKm: number, options:
     ...(options.forceRefresh ? { force_refresh: "true" } : {}),
   });
   try {
-    const response = await fetch(`${API_BASE_URL}/osm/nearby?${query}`, {
+    const response = await fetchWithAccount(`${API_BASE_URL}/osm/nearby?${query}`, {
       signal: controller.signal, credentials: "omit", headers: { Accept: "application/json" },
     });
     let body: unknown;

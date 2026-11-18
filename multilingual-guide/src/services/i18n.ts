@@ -1,3 +1,4 @@
+import { authCopy } from './authI18n';
 import { journeyCopy } from './journeyI18n';
 import { presenceCopy } from './presenceI18n';
 import { reviewCopy } from './reviewI18n';
@@ -7,6 +8,7 @@ import type { Language } from '../data/places';
 // Vietnamese keys keep existing copy and accessibility labels stable. Technical
 // diagnostics and content supplied by a provider retain their original language.
 const copy: Record<string, readonly [string, string, string]> = {
+  ...authCopy,
   ...journeyCopy,
   ...presenceCopy,
   ...reviewCopy,
