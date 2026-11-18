@@ -11,7 +11,7 @@ import os
 import time
 from dataclasses import dataclass
 
-from sqlalchemy import case, delete, select
+from sqlalchemy import case, delete, select, update
 from app.config import SECRET_KEY
 from app.models.auth_session import LoginAttempt
 
@@ -71,18 +71,47 @@ def lock_retry_after(db, email: str) -> int:
     return max(0, expires - now) if expires and expires > now else 0
 
 
-def record_failed_login(db, email: str):
+def _engage_lock(db, email: str, now: int) -> int:
+    """Create the lock unless one is active (never extends it) and align the failure counter with it."""
+    expired = LoginAttempt.expires_at <= now
+    statement = _insert(db)(LoginAttempt).values(key=_key('lock', email), attempts=1, expires_at=now + LOCK_SECONDS)
+    expires = db.execute(statement.on_conflict_do_update(index_elements=['key'], set_={
+        'attempts': 1,
+        'expires_at': case((expired, now + LOCK_SECONDS), else_=LoginAttempt.expires_at),
+    }).returning(LoginAttempt.expires_at)).scalar_one()
+    db.execute(update(LoginAttempt).where(LoginAttempt.key == _key('fail', email)).values(expires_at=expires))
+    return expires
+
+
+def reserve_login_attempt(db, email: str) -> int:
+    """Atomically count this attempt as a failure before the password is verified.
+
+    Returns the reserved attempt number. Raises LoginRejected when the account is locked
+    or when this attempt exceeds the failure limit.
+    """
     now = int(time.time())
-    failures = _bump(db, _key('fail', email), now + LOCK_WINDOW_SECONDS, now)
-    if failures >= LOCK_FAILURES:
-        lock_key = _key('lock', email)
-        statement = _insert(db)(LoginAttempt).values(key=lock_key, attempts=1, expires_at=now + LOCK_SECONDS)
-        db.execute(statement.on_conflict_do_update(index_elements=['key'], set_={
-            'attempts': 1, 'expires_at': now + LOCK_SECONDS}))
-        db.execute(delete(LoginAttempt).where(LoginAttempt.key == _key('fail', email)))
+    locked_for = lock_retry_after(db, email)
+    if locked_for:
+        db.rollback()
+        raise LoginRejected('login_locked', LOCK_MESSAGE, locked_for)
+    attempt = _bump(db, _key('fail', email), now + LOCK_WINDOW_SECONDS, now)
+    if attempt > LOCK_FAILURES:
+        expires = _engage_lock(db, email, now)
+        db.commit()
+        raise LoginRejected('login_locked', LOCK_MESSAGE, max(1, expires - now))
+    db.commit()
+    return attempt
+
+
+def record_failed_login(db, email: str, attempt: int):
+    """Keep the reservation; the failure that reaches the limit locks the account."""
+    if attempt >= LOCK_FAILURES:
+        _engage_lock(db, email, int(time.time()))
     db.commit()
 
 
-def clear_failed_logins(db, email: str):
-    db.execute(delete(LoginAttempt).where(LoginAttempt.key.in_([_key('fail', email), _key('lock', email)])))
+def release_login_attempt(db, email: str):
+    """Successful password: drop the failure counter but never an existing lock."""
+    db.execute(delete(LoginAttempt).where(LoginAttempt.key == _key('fail', email),
+                                          LoginAttempt.attempts <= LOCK_FAILURES))
     db.commit()
