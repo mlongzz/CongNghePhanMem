@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { ACCESS_KEY, GUEST_STATE, REFRESH_KEY, VIEWER_EMAIL, VIEWER_PASSWORD, registerApi } from './auth';
+import { ACCESS_KEY, API, GUEST_STATE, REFRESH_KEY, VIEWER_EMAIL, VIEWER_PASSWORD, registerApi } from './auth';
 
 test.use({ storageState: GUEST_STATE });
 
@@ -134,11 +134,24 @@ test('an already registered email is reported under the email field', async ({ p
 
 test('a wrong password and an unknown email give the same message', async ({ page }) => {
   await page.goto('/login');
-  await signIn(page, VIEWER_EMAIL, 'WrongPassword999');
+  const loginResponse = () => page.waitForResponse('**/auth/login');
   const alert = page.getByRole('alert').filter({ hasText: 'Email hoặc mật khẩu không đúng.' });
+  const first = loginResponse();
+  await signIn(page, VIEWER_EMAIL, 'WrongPassword999');
+  const wrongPassword = await first;
   await expect(alert).toBeVisible();
   await expect(page).toHaveURL(/\/login$/);
+  let release: () => void = () => {};
+  const held = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/auth/login', async route => { await held; await route.continue(); });
+  const second = loginResponse();
   await signIn(page, unique('nobody'), 'WrongPassword999');
+  await expect(alert).toHaveCount(0);
+  release();
+  const unknownEmail = await second;
+  expect(wrongPassword.status()).toBe(401);
+  expect(unknownEmail.status()).toBe(401);
+  expect((await unknownEmail.json()).detail).toBe((await wrongPassword.json()).detail);
   await expect(alert).toBeVisible();
   await expect(page.getByText(/không tồn tại|chưa đăng ký/i)).toHaveCount(0);
 });
@@ -199,9 +212,14 @@ test('signing out blocks the app again and a new tab keeps the session before th
   await expect(second.getByRole('tab', { name: /Khám phá/ })).toBeVisible();
   await second.close();
   await page.goto('/profile');
+  const oldRefresh = await page.evaluate(key => localStorage.getItem(key), REFRESH_KEY);
+  expect(oldRefresh).toBeTruthy();
+  const revoked = page.waitForResponse(r => new URL(r.url()).pathname === '/auth/logout');
   await page.getByText('Đăng xuất', { exact: true }).click();
   await expect(page).toHaveURL(/\/login$/);
+  await revoked;
   expect(await page.evaluate(key => localStorage.getItem(key), REFRESH_KEY)).toBeNull();
+  expect((await request.post(`${API}/auth/refresh`, { data: { refresh_token: oldRefresh } })).status()).toBe(401);
   await page.goto('/');
   await expect(page).toHaveURL(/\/login$/);
   await page.goto('/place/db-1');
