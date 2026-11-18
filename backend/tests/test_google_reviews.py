@@ -23,14 +23,14 @@ def place(db):
     return row
 
 
-def test_without_key_returns_google_maps_link_and_no_reviews(client, db_session, monkeypatch):
+def test_without_key_returns_google_maps_link_and_no_reviews(client, db_session, monkeypatch, reader_headers):
     monkeypatch.delenv('GOOGLE_MAPS_API_KEY', raising=False)
     row = place(db_session)
-    body = client.get(f'/places/{row.id}/google-reviews').json()
+    body = client.get(f'/places/{row.id}/google-reviews', headers=reader_headers).json()
     assert body['configured'] is False and body['reviews'] == [] and body['rating'] is None
     assert body['google_maps_uri'].startswith('https://www.google.com/maps/search/?api=1&query=')
-    assert client.get('/places/999999/google-reviews').status_code == 404
-    assert client.get(f'/places/{row.id}/google-reviews?language=de').status_code == 422
+    assert client.get('/places/999999/google-reviews', headers=reader_headers).status_code == 404
+    assert client.get(f'/places/{row.id}/google-reviews?language=de', headers=reader_headers).status_code == 422
 
 
 def test_with_key_maps_places_api_reviews_with_attribution_and_caches(monkeypatch):

@@ -31,25 +31,25 @@ def client(db_session):
         app.dependency_overrides.clear()
 
 
-def names(client, q):
-    return sorted(row["name"] for row in client.get("/places/search", params={"q": q}).json())
+def names(client, q, headers):
+    return sorted(row["name"] for row in client.get("/places/search", params={"q": q}, headers=headers).json())
 
 
 def test_escape_like_escapes_wildcards():
     assert escape_like("a%b_c" + BS + "d") == "a" + BS + "%b" + BS + "_c" + BS + BS + "d"
 
 
-def test_public_search_treats_wildcards_literally(client):
-    assert names(client, "%") == ["100% Pure"]
-    assert names(client, "_") == ["snake_case"]
-    assert names(client, "\\") == ["back" + BS + "slash"]
-    assert names(client, "snake_c") == ["snake_case"]
-    assert names(client, "museum") == ["Plain Museum"]
+def test_public_search_treats_wildcards_literally(client, reader_headers):
+    assert names(client, "%", reader_headers) == ["100% Pure"]
+    assert names(client, "_", reader_headers) == ["snake_case"]
+    assert names(client, "\\", reader_headers) == ["back" + BS + "slash"]
+    assert names(client, "snake_c", reader_headers) == ["snake_case"]
+    assert names(client, "museum", reader_headers) == ["Plain Museum"]
 
 
-def test_public_search_query_length_is_limited(client):
-    assert client.get("/places/search", params={"q": "a" * 100}).status_code == 200
-    assert client.get("/places/search", params={"q": "a" * 101}).status_code == 422
+def test_public_search_query_length_is_limited(client, reader_headers):
+    assert client.get("/places/search", params={"q": "a" * 100}, headers=reader_headers).status_code == 200
+    assert client.get("/places/search", params={"q": "a" * 101}, headers=reader_headers).status_code == 422
 
 
 def test_admin_search_treats_wildcards_literally(client, db_session):
