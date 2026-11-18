@@ -1,8 +1,9 @@
 import { test, expect } from '@playwright/test';
 import { Buffer } from 'node:buffer';
+import { VIEWER_DISTRICT1_STATE } from './auth';
 
 // Real first visit: the product's District 1 mode, with no saved test-harness preference.
-test.use({ storageState: { cookies: [], origins: [] } });
+test.use({ storageState: VIEWER_DISTRICT1_STATE });
 
 const origin = { latitude: 10.7764, longitude: 106.6993, accuracy: 5 };
 const tile = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg==', 'base64');

@@ -1,4 +1,7 @@
 import {test,expect} from '@playwright/test';
+import { GUEST_STATE } from './auth';
+
+test.use({ storageState: GUEST_STATE });
 const api='http://127.0.0.1:8765';
 const pixel=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg==','base64');
 test('Admin previews all 15 licensed demo places without importing or calling Wikipedia',async({page,request})=>{

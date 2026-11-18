@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
+import { VIEWER_DISTRICT1_STATE } from './auth';
 
-test.use({ storageState: { cookies: [], origins: [] } });
+test.use({ storageState: VIEWER_DISTRICT1_STATE });
 const pixel = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg==', 'base64');
 const full = 'https://qa-images.example.test/recovery.jpg';
 const thumb = 'https://qa-images.example.test/recovery-thumb.jpg';

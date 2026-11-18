@@ -1,4 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
+import { GUEST_STATE } from './auth';
+
+test.use({ storageState: GUEST_STATE });
 const api='http://127.0.0.1:8765';
 async function login(page:Page){
   await page.goto('/login');await page.getByLabel('Địa chỉ email',{exact:true}).fill('admin@e2e.example.com');await page.getByLabel('Mật khẩu',{exact:true}).fill('TestPassword123!');await page.getByRole('button',{name:'Đăng nhập',exact:true}).click();await expect(page).toHaveURL(/\/admin$/);
@@ -31,7 +34,7 @@ test('Admin empty image editor, zero presence ID, missing import sources and no 
 test('Anonymous Admin/Login/Profile navigation has no raw text nodes or page errors',async({page})=>{
   const warnings:string[]=[],errors:string[]=[];
   page.on('console',message=>{if(/Unexpected text node|Text strings must be rendered/.test(message.text()))warnings.push(message.text());});page.on('pageerror',error=>errors.push(`${new URL(page.url()).pathname}: ${error.message}`));
-  await page.goto('/admin');await expect(page).toHaveURL(/\/login$/);await expect(page.getByLabel('Địa chỉ email',{exact:true})).toBeVisible();
-  await page.goto('/profile');await expect(page.getByText('Nhà khám phá',{exact:true})).toBeVisible();
+  await page.goto('/admin');await expect(page).toHaveURL(/\/login\?redirect=%2Fadmin$/);await expect(page.getByLabel('Địa chỉ email',{exact:true})).toBeVisible();
+  await page.goto('/profile');await expect(page).toHaveURL(/\/login\?redirect=%2Fprofile$/);await expect(page.getByLabel('Địa chỉ email',{exact:true})).toBeVisible();await expect(page.getByText('Nhà khám phá',{exact:true})).toHaveCount(0);
   expect(warnings).toEqual([]);expect(errors).toEqual([]);
 });
