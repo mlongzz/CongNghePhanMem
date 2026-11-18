@@ -211,6 +211,39 @@ test('guest-only copy is gone from the screens while the legacy favourites merge
 
 test('the root layout wraps every screen in the single auth gate', () => {
   assert.match(fs.readFileSync('app/_layout.tsx', 'utf8'), /<AuthGate><Stack/);
-  const gate = fs.readFileSync('src/components/AuthGate.tsx', 'utf8');
-  assert.ok(gate.includes('loginHref(target)') && gate.includes('postLoginTarget('));
+});
+
+test('redirect rejects encoded, double-encoded and dot-segment tricks', () => {
+  for (const value of ['/%2F%2Fevil', '/%5Cevil', '/%252F%252Fevil', '/./login', '/../login', '/login/../admin/../login', '/%2e%2e/login', '/..//evil', '/a/../../login/', '/%2e/register'])
+    assert.equal(redirect.sanitizeRedirect(value), null, value);
+});
+
+test('redirect resolves dot-segments to a normalized internal path', () => {
+  const table = [['/login/../admin', '/admin'], ['/a/./b', '/a/b'], ['/a/b/../c?x=1#t', '/a/c?x=1#t'], ['/a/..', '/'], ['/a/b/.', '/a/b/']];
+  for (const [input, expected] of table) assert.equal(redirect.sanitizeRedirect(input), expected, input);
+});
+
+const gateBase = { pathname: '/', target: '/', redirectParam: undefined, hasToken: false, authLoading: false, settled: true, sessionUnverified: false, isAdmin: false, signedOutByUser: false };
+
+test('auth gate decision table', () => {
+  const table = [
+    ['first load waits', { authLoading: true, settled: false }, { kind: 'wait' }],
+    ['reload after first settle does not blank the app', { authLoading: true, settled: true, hasToken: true }, { kind: 'stay' }],
+    ['signed out on a protected page keeps the target', { pathname: '/place/db-1', target: '/place/db-1?x=1' }, { kind: 'redirect', to: '/login?redirect=%2Fplace%2Fdb-1%3Fx%3D1' }],
+    ['signed out on home goes to plain login', {}, { kind: 'redirect', to: '/login' }],
+    ['explicit sign-out drops the target', { pathname: '/saved', target: '/saved', signedOutByUser: true }, { kind: 'redirect', to: '/login' }],
+    ['signed out on login stays', { pathname: '/login' }, { kind: 'stay' }],
+    ['signed out on register stays', { pathname: '/register/' }, { kind: 'stay' }],
+    ['unverified session on a protected page shows the retry screen', { pathname: '/map', target: '/map', sessionUnverified: true }, { kind: 'unverified' }],
+    ['unverified session on login stays', { pathname: '/login', sessionUnverified: true }, { kind: 'stay' }],
+    ['signed in on login returns to the redirect target', { pathname: '/login', hasToken: true, redirectParam: '/place/db-12' }, { kind: 'redirect', to: '/place/db-12' }],
+    ['signed in on login ignores an unsafe redirect', { pathname: '/login', hasToken: true, redirectParam: '//evil.com' }, { kind: 'redirect', to: '/' }],
+    ['signed in on login ignores a dot-segment loop', { pathname: '/login', hasToken: true, redirectParam: '/../login' }, { kind: 'redirect', to: '/' }],
+    ['signed-in admin on login with no target goes to admin', { pathname: '/login', hasToken: true, isAdmin: true }, { kind: 'redirect', to: '/admin' }],
+    ['signed in on register goes home', { pathname: '/register', hasToken: true }, { kind: 'redirect', to: '/' }],
+    ['non-admin on admin is sent home', { pathname: '/admin/places', hasToken: true }, { kind: 'redirect', to: '/' }],
+    ['admin on admin stays', { pathname: '/admin', hasToken: true, isAdmin: true }, { kind: 'stay' }],
+    ['signed in on a normal page stays', { pathname: '/map', hasToken: true }, { kind: 'stay' }],
+  ];
+  for (const [name, patch, expected] of table) assert.deepEqual(plain(redirect.gateDecision({ ...gateBase, ...patch })), expected, name);
 });

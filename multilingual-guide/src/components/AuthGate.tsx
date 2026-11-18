@@ -4,7 +4,7 @@ import { router, useGlobalSearchParams, usePathname, useSegments } from 'expo-ro
 import { useApp } from '../context/AppContext';
 import { useI18n } from '../hooks/useI18n';
 import { C } from '../theme/colors';
-import { isAuthPath, loginHref, pathOnly, postLoginTarget } from '../services/authRedirect';
+import { gateDecision } from '../services/authRedirect';
 
 function Wait({ message }: { message: string }) {
   return <View accessibilityRole="progressbar" style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, backgroundColor: C.paper }}><ActivityIndicator color={C.primary} /><Text style={{ color: C.muted }}>{message}</Text></View>;
@@ -27,19 +27,19 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   const params = useGlobalSearchParams<Record<string, string | string[]>>();
   const [settled, setSettled] = useState(false);
   if (!authLoading && !settled) setSettled(true);
-  const loading = authLoading && !settled;
-  const onAuthPage = isAuthPath(pathname);
   const target = currentTarget(pathname, segments, params);
-  const destination = loading ? null
-    : !token ? (onAuthPage || sessionUnverified ? null : signedOutByUser ? '/login' : loginHref(target))
-      : onAuthPage ? postLoginTarget(params.redirect, isAdmin)
-        : pathOnly(pathname).startsWith('/admin') && !isAdmin ? '/' : null;
+  const decision = gateDecision({ pathname, target, redirectParam: params.redirect, hasToken: Boolean(token), authLoading, settled, sessionUnverified, isAdmin, signedOutByUser });
+  const destination = decision.kind === 'redirect' ? decision.to : null;
   useEffect(() => { if (destination) router.replace(destination as never); }, [destination]);
-  if (loading) return <Wait message={t('Đang kiểm tra phiên đăng nhập…')} />;
-  if (!token && sessionUnverified && !onAuthPage) {
+  if (decision.kind === 'wait') return <Wait message={t('Đang kiểm tra phiên đăng nhập…')} />;
+  if (decision.kind === 'unverified') {
+    const retrying = authLoading;
     return <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24, backgroundColor: C.paper }}>
       <Text accessibilityRole="alert" style={{ textAlign: 'center', color: C.danger }}>{t(sessionNotice)}</Text>
-      <Pressable accessibilityRole="button" onPress={retrySession}><Text style={{ fontWeight: '700', color: C.primaryDark }}>{t('Thử lại')}</Text></Pressable>
+      <Pressable accessibilityRole="button" accessibilityState={{ disabled: retrying, busy: retrying }} disabled={retrying} onPress={retrySession} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, opacity: retrying ? 0.6 : 1 }}>
+        {retrying ? <ActivityIndicator color={C.primary} /> : null}
+        <Text style={{ fontWeight: '700', color: C.primaryDark }}>{t(retrying ? 'Đang thử lại…' : 'Thử lại')}</Text>
+      </Pressable>
     </View>;
   }
   if (destination) return <Wait message={t('Đang chuyển hướng…')} />;
