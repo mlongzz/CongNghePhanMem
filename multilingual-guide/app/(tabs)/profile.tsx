@@ -19,7 +19,7 @@ import { notify } from '../../src/services/notify';
 
 export default function Profile() {
   const { t } = useI18n();
-  const { language, setLanguage, token, logout, user, favorites, stop, isAdmin } = useApp();
+  const { language, setLanguage, token, signOut, user, favorites, stop, isAdmin } = useApp();
   const [health, setHealth] = useState<
     "checking" | "online" | "offline" | "not-configured"
   >(API_BASE_URL ? "checking" : "not-configured");
@@ -56,12 +56,10 @@ export default function Profile() {
           </View>
           <View style={{ flex: 1, minWidth:0 }}>
             <Text style={s.accountTitle}>
-              {token ? (user?.full_name || t('Đã đăng nhập')) : t('Nhà khám phá')}
+              {user?.full_name || t('Đã đăng nhập')}
             </Text>
             <Text style={s.accountSub}>
-              {token
-                ? (user?.email || t('Phiên đăng nhập đang hoạt động'))
-                : t('Đăng nhập để sử dụng tài khoản cá nhân')}
+              {user?.email || t('Phiên đăng nhập đang hoạt động')}
             </Text>
             {token && user ? <Text style={s.accountSub}>
               {t('Vai trò tài khoản')}: {t(user.role === 'admin' ? 'Quản trị viên' : 'Người dùng thường')} · {t('Quyền quản trị khi đăng nhập')}: {t(isAdmin ? 'Có' : 'Không')}
@@ -71,8 +69,7 @@ export default function Profile() {
         {token ? (
           <Pressable
             onPress={() => {
-              logout();
-              router.replace("/login");
+              signOut();
               notify(t('Đã đăng xuất'), t('Phiên đăng nhập đã được xóa.'));
             }}
             style={s.login}
@@ -80,13 +77,7 @@ export default function Profile() {
             <Ionicons name="log-out-outline" size={18} color={C.primary} />
             <Text style={s.loginText}>{t('Đăng xuất')}</Text>
           </Pressable>
-        ) : (
-          <Pressable onPress={() => router.push("/login")} style={s.login}>
-            <Ionicons name="log-in-outline" size={19} color={C.primary} />
-            <Text style={s.loginText}>{t('Đăng nhập')}</Text>
-            <Ionicons name="arrow-forward" size={17} color={C.primary} />
-          </Pressable>
-        )}
+        ) : null}
 
         {Boolean(token) && <View style={{ gap: 10, marginTop: 12 }}><Pressable onPress={() => router.push('/account')} style={s.login}><Text style={s.loginText}>{t('Chỉnh sửa hồ sơ →')}</Text></Pressable><Pressable onPress={() => router.push('/history')} style={s.login}><Text style={s.loginText}>{t('Lịch sử khám phá →')}</Text></Pressable></View>}
         {token && isAdmin ? (

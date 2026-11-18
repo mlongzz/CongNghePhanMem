@@ -13,7 +13,7 @@ import * as Speech from "expo-speech";
 import { LANGS, type Language, type Place, type NarrationContent } from "../data/places";
 import { type Coordinates, fetchNearbyPlaces, validateBackendPlace } from "../services/nearby";
 import { getSessionToken, writeSessionToken, getRefreshToken, writeRefreshToken } from "../services/session";
-import { apiFetch, checkAdmin, getUserProfile, refreshTokens, revokeSession, ApiError, setSessionRecovery, type UserResponse } from "../services/api";
+import { apiFetch, checkAdmin, getUserProfile, refreshTokens, revokeSession, ApiError, setSessionRecovery, setTokenProvider, type UserResponse } from "../services/api";
 import { createSpeechPlayer, createWebSpeechDriver, type PlayerState } from "../services/speechPlayer";
 import { resolveNarration, NO_NARRATION } from "../services/narration";
 import { validateDiscoveredPlace, parseDiscoveredPlaces, serializeDiscoveredPlaces } from "../services/placeRegistry";
@@ -59,6 +59,9 @@ type AppState = {
   updateProfile: (profile: UserResponse) => void;
   authLoading: boolean;
   logout: () => void;
+  signOut: () => void;
+  signedOutByUser: boolean;
+  sessionExpired: boolean;
   sessionNotice: string;
   sessionUnverified: boolean;
   retrySession: () => void;
@@ -140,10 +143,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserResponse | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [sessionNotice, setSessionNotice] = useState('');
+  const [sessionExpired, setSessionExpired] = useState(false);
+  const [signedOutByUser, setSignedOutByUser] = useState(false);
   const [sessionUnverified, setSessionUnverified] = useState(false);
   const speechSeq = useRef(0);
   const authSeq = useRef(0);
   const tokenRef = useRef<string | null>(null);
+  useEffect(() => { setTokenProvider(() => tokenRef.current); return () => setTokenProvider(null); }, []);
   const refreshRef = useRef<string | null>(null);
   const recovery = useRef<Promise<string | null> | null>(null);
   const rotateTokens = useCallback(async (refresh: string) => {
@@ -167,6 +173,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!(e instanceof ApiError && e.status === 401)) setSessionNotice('Đã đăng xuất trên thiết bị. Chưa thu hồi được phiên trên máy chủ do lỗi kết nối.');
     });
   }, []);
+  const expire = useCallback(() => { logout(); setSessionExpired(true); }, [logout]);
+  const signOut = useCallback(() => { setSignedOutByUser(true); logout(); }, [logout]);
   const loginWithTokens = useCallback(async (access: string, refresh: string, keepLoading = false) => {
     const seq = ++authSeq.current;
     setAuthLoading(true);
@@ -185,7 +193,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
       tokenRef.current = access;
       refreshRef.current = refresh || null;
-      setSessionNotice(''); setSessionUnverified(false);
+      setSessionNotice(''); setSessionUnverified(false); setSessionExpired(false); setSignedOutByUser(false);
       saveToken(access); setUser(profile); setAdminToken(admin.enabled ? access : null);
     } finally { if (seq === authSeq.current && !keepLoading) setAuthLoading(false); }
   }, []);
@@ -198,13 +206,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         recovery.current = (async () => {
           try {
             const refresh = await getRefreshToken();
-            if (!refresh) { logout(); return null; }
+            if (!refresh) { expire(); return null; }
             const result = await rotateTokens(refresh);
             if (seq !== authSeq.current) return null;
             await loginWithTokens(result.access_token, result.refresh_token);
             return tokenRef.current;
           } catch (e) {
-            if (e instanceof ApiError && e.status === 401) logout();
+            if (e instanceof ApiError && e.status === 401) expire();
             throw e;
           } finally { recovery.current = null; }
         })();
@@ -212,7 +220,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return recovery.current;
     });
     return () => setSessionRecovery(null);
-  }, [loginWithTokens, logout, rotateTokens]);
+  }, [expire, loginWithTokens, logout, rotateTokens]);
   const restoreRunning = useRef(false);
   const restoreSession = useCallback(async () => {
     if (restoreRunning.current || tokenRef.current) return;
@@ -230,10 +238,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
       setSessionUnverified(false);
     } catch (e) {
-      if (restoreOutcome(e) === 'expired') logout();
+      if (restoreOutcome(e) === 'expired') expire();
       else { setSessionUnverified(true); setSessionNotice(SESSION_UNVERIFIED_NOTICE); }
     } finally { restoreRunning.current = false; setAuthLoading(false); }
-  }, [loginWithTokens, logout, rotateTokens]);
+  }, [expire, loginWithTokens, rotateTokens]);
   useEffect(() => { void Promise.resolve().then(restoreSession); }, [restoreSession]);
   const retrySession = useCallback(() => { setAuthLoading(true); void restoreSession(); }, [restoreSession]);
   useEffect(() => {
@@ -248,12 +256,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let mounted = true;
     void (async () => {
-      const [saved, lang, guideDrafts, settings] =
+      const [saved, lang, guideDrafts] =
         await Promise.allSettled([
           AsyncStorage.getItem(STORE_FAVORITES),
           AsyncStorage.getItem(STORE_LANG),
           AsyncStorage.getItem(STORE_DRAFTS),
-          apiFetch<{ default_language: string; nearby_radius_km: number }>("/settings"),
         ]);
       if (!mounted) return;
       try {
@@ -267,16 +274,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           LANGS.some((l) => l.key === lang.value)
         )
           saveLanguage(lang.value as Language);
-        if (settings.status === "fulfilled" && settings.value && typeof settings.value === "object") {
-          const defaultRadius = settings.value.nearby_radius_km;
-          if (!radiusWasChosen.current && typeof defaultRadius === "number" && Number.isFinite(defaultRadius) && defaultRadius >= 1 && defaultRadius <= 20) {
-            currentRadius.current = defaultRadius;
-            saveRadiusKm(defaultRadius);
-          }
-          if (!tokenRef.current && !(lang.status === "fulfilled" && lang.value) && LANGS.some(l => l.key === settings.value.default_language))
-            saveLanguage(settings.value.default_language as Language);
-        }
-
         if (guideDrafts.status === "fulfilled" && guideDrafts.value)
           setDrafts(JSON.parse(guideDrafts.value));
       } catch {
@@ -287,8 +284,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       mounted = false;
     };
   }, []);
+  useEffect(() => {
+    if (!token) return;
+    let mounted = true;
+    void apiFetch<{ default_language: string; nearby_radius_km: number }>("/settings", { token }).then(settings => {
+      if (!mounted || !settings || typeof settings !== "object") return;
+      const defaultRadius = settings.nearby_radius_km;
+      if (!radiusWasChosen.current && typeof defaultRadius === "number" && Number.isFinite(defaultRadius) && defaultRadius >= 1 && defaultRadius <= 20) {
+        currentRadius.current = defaultRadius;
+        saveRadiusKm(defaultRadius);
+      }
+    }).catch(() => { /* settings are optional */ });
+    return () => { mounted = false; };
+  }, [token]);
   const catalogLoadedAt = useRef<number | null>(null);
   const refreshCatalog = useCallback(async (options: { maxAgeMs?: number } = {}) => {
+    if (!tokenRef.current) return;
     if (options.maxAgeMs !== undefined && isCatalogFresh(catalogLoadedAt.current, Date.now(), options.maxAgeMs)) return;
     const seq = ++catalogSeq.current;
     locationRequest.current?.abort();
@@ -572,7 +583,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       token,
       setToken,
       isAdmin,
-      user, updateProfile, authLoading, logout, sessionNotice, sessionUnverified, retrySession, loginWithTokens,
+      user, updateProfile, authLoading, logout, signOut, signedOutByUser, sessionExpired, sessionNotice, sessionUnverified, retrySession, loginWithTokens,
       places,
       location,
       searchLocation, updateGpsLocation,
@@ -605,7 +616,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       token,
       setToken,
       isAdmin,
-      user, updateProfile, authLoading, logout, sessionNotice, sessionUnverified, retrySession, loginWithTokens,
+      user, updateProfile, authLoading, logout, signOut, signedOutByUser, sessionExpired, sessionNotice, sessionUnverified, retrySession, loginWithTokens,
       places,
       location,
       searchLocation, updateGpsLocation,

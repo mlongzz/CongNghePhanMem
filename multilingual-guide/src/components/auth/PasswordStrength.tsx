@@ -2,18 +2,16 @@ import React, { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { C } from '../../theme/colors';
 import { useI18n } from '../../hooks/useI18n';
+import { passwordIssues } from '../../services/authValidation';
 
 interface PasswordStrengthProps {
   password: string;
 }
 
 function getStrength(password: string) {
-  let score = 0;
-  if (password.length >= 8) score++;
-  if (/[A-Z]/.test(password)) score++;
-  if (/[0-9]/.test(password)) score++;
-  if (/[^A-Za-z0-9]/.test(password)) score++;
-  return score;
+  const issues = passwordIssues(password).length;
+  if (issues > 0) return Math.min(2, 4 - issues);
+  return password.length >= 12 || /[^A-Za-z0-9]/.test(password) ? 4 : 3;
 }
 
 const LABELS = ['Yếu', 'Yếu', 'Trung bình', 'Khá', 'Mạnh'];
