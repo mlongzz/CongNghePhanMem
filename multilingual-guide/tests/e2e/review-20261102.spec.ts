@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { osmPayload } from './osm-fixture';
-import { GUEST_STATE } from './auth';
+import { GUEST_STATE, viewerHeaders } from './auth';
 
 test('a 95m GPS reading shows the same accuracy warning on Home and Map', async ({ page }) => {
   await page.addInitScript(() => {
@@ -31,6 +31,7 @@ test.describe('without a stored session', () => {
     const api = 'http://127.0.0.1:8765';
     const login = await request.post(`${api}/auth/login`, { data: { email: 'admin@e2e.example.com', password: 'TestPassword123!' } });
     const headers = { Authorization: `Bearer ${(await login.json()).access_token}` };
+    const readHeaders = await viewerHeaders(request);
     const place = await (await request.post(`${api}/admin/places`, { headers, data: { name: 'Review guide fixture', latitude: 0, longitude: 0, publication_status: 'published' } })).json();
     const title = `Reviewed guide ${Date.now()}`;
     await request.put(`${api}/admin/places/${place.id}/guide-content/vi`, { headers, data: { title, content: 'Published review fixture text.', publication_status: 'published' } });
@@ -48,14 +49,14 @@ test.describe('without a stored session', () => {
       await row.getByRole('button', { name: 'Sửa', exact: true }).click();
       await page.getByRole('button', { name: 'Lưu thay đổi', exact: true }).click();
       await expect(page.getByText('Không có thay đổi. Trạng thái xuất bản được giữ nguyên.', { exact: true })).toBeVisible();
-      expect((await request.get(`${api}/places/${place.id}/guide-content?language=vi`)).status()).toBe(200);
+      expect((await request.get(`${api}/places/${place.id}/guide-content?language=vi`, { headers: readHeaders })).status()).toBe(200);
       await row.getByRole('button', { name: 'Sửa', exact: true }).click();
       await page.getByLabel('Nội dung thuyết minh', { exact: true }).fill('Changed content requiring a new publication review.');
       await page.getByRole('button', { name: 'Lưu thay đổi', exact: true }).click();
       await expect(page.getByText(/Lưu nội dung này sẽ gỡ bản đang công khai/)).toBeVisible();
-      expect((await request.get(`${api}/places/${place.id}/guide-content?language=vi`)).status()).toBe(200);
+      expect((await request.get(`${api}/places/${place.id}/guide-content?language=vi`, { headers: readHeaders })).status()).toBe(200);
       await page.getByRole('button', { name: 'Xác nhận', exact: true }).click();
-      await expect.poll(async () => (await request.get(`${api}/places/${place.id}/guide-content?language=vi`)).status()).toBe(404);
+      await expect.poll(async () => (await request.get(`${api}/places/${place.id}/guide-content?language=vi`, { headers: readHeaders })).status()).toBe(404);
     } finally {
       await request.delete(`${api}/admin/places/${place.id}`, { headers });
     }

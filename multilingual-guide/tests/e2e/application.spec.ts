@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import { test, expect } from '@playwright/test';
 import { Buffer } from 'node:buffer';
-import { GUEST_STATE, VIEWER_EMAIL, VIEWER_PASSWORD, loginApi, seedTokens } from './auth';
+import { GUEST_STATE, VIEWER_EMAIL, VIEWER_PASSWORD, loginApi, seedTokens, viewerHeaders } from './auth';
 
 test.use({ storageState: GUEST_STATE });
 
@@ -134,6 +134,7 @@ test('offline login shows an actionable error', async ({ page }) => {
 });
 
 test('admin publishes narration and builds a journey from named places', async ({ page, request }) => {
+  const readHeaders = await viewerHeaders(request);
   await login(page, 'admin@e2e.example.com');
   await expect(page).toHaveURL(/\/admin$/);
   await page.getByRole('button', { name: 'Bản dịch & TTS', exact: true }).click();
@@ -150,7 +151,7 @@ test('admin publishes narration and builds a journey from named places', async (
   await guideRow.getByRole('button', { name: 'Xuất bản', exact: true }).click();
   await page.getByRole('button', { name: 'Xác nhận', exact: true }).click();
   await expect.poll(async () => {
-    const guide = await request.get(`http://127.0.0.1:8765/places/1/guide-content?language=${language}`);
+    const guide = await request.get(`http://127.0.0.1:8765/places/1/guide-content?language=${language}`, { headers: readHeaders });
     return guide.status() === 200 ? (await guide.json()).content : null;
   }).toBe('Updated narration verified by browser test.');
   await page.getByRole('button', { name: 'Hành trình', exact: true }).click();

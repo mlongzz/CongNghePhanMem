@@ -40,3 +40,8 @@ export async function seedTokens(context: BrowserContext, tokens: Tokens) {
 export async function registerApi(request: APIRequestContext, fullName: string, email: string, password: string) {
   return request.post(`${API}/users`, { data: { full_name: fullName, email, password, language: 'vi' } });
 }
+
+export async function viewerHeaders(request: APIRequestContext): Promise<{ Authorization: string }> {
+  const tokens = await loginApi(request, VIEWER_EMAIL, VIEWER_PASSWORD);
+  return { Authorization: `Bearer ${tokens.access_token}` };
+}

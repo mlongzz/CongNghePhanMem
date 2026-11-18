@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { GUEST_STATE } from './auth';
+import { GUEST_STATE, viewerHeaders } from './auth';
 
 test.use({ storageState: GUEST_STATE });
 const api='http://127.0.0.1:8765';
@@ -44,6 +44,7 @@ test('real presence across tabs, Admin dashboard, own deletion and persistent op
 });
 
 test('Image Manager drag/drop, duplicate detection, URL error, source suggestions and multi-POI navigation',async({page,request})=>{
+  const readHeaders=await viewerHeaders(request);
   await login(page,'admin@e2e.example.com');await expect(page).toHaveURL(/\/admin$/);
   await page.getByText('Thư viện ảnh',{exact:true}).click();await expect(page.getByTestId('image-manager')).toBeVisible();
   await page.getByLabel('Tìm địa danh trong thư viện ảnh').fill('Journey Admin fixture');
@@ -63,7 +64,7 @@ test('Image Manager drag/drop, duplicate detection, URL error, source suggestion
   const savedCover = page.waitForResponse(response => /\/admin\/places\/\d+\/images\/\d+$/.test(new URL(response.url()).pathname) && response.request().method()==='PUT');
   await page.getByRole('button',{name:'Đặt làm ảnh bìa',exact:true}).click();await expect(page.getByRole('button',{name:'Gỡ ảnh khỏi địa điểm'})).toBeVisible();
   const cover = await (await savedCover).json();
-  const publicPlace = await request.get(api+'/places/'+cover.image.place_id);
+  const publicPlace = await request.get(api+'/places/'+cover.image.place_id,{headers:readHeaders});
   expect(publicPlace.status()).toBe(200);
   expect((await publicPlace.json()).image_url).toBe(cover.image_url);
   await page.getByLabel('URL ảnh nhập vào thư viện').fill('https://localhost/private.jpg');await page.getByRole('button',{name:'Lưu ảnh từ URL vào thư viện'}).click();
@@ -75,7 +76,7 @@ test('Image Manager drag/drop, duplicate detection, URL error, source suggestion
   await page.getByRole('button',{name:'Gỡ ảnh khỏi địa điểm',exact:true}).click();
   await page.getByRole('button',{name:'Xác nhận gỡ ảnh',exact:true}).click();
   await expect(page.getByRole('button',{name:'Gỡ ảnh khỏi địa điểm',exact:true})).toBeHidden();
-  const withoutCover = await request.get(api+'/places/'+cover.image.place_id);
+  const withoutCover = await request.get(api+'/places/'+cover.image.place_id,{headers:readHeaders});
   expect(withoutCover.status()).toBe(200);
   expect((await withoutCover.json()).image_url).toBeNull();
   await page.getByRole('button',{name:'POI tiếp →'}).click();

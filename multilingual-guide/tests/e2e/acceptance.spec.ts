@@ -1,5 +1,5 @@
 import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
-import { GUEST_STATE } from './auth';
+import { GUEST_STATE, viewerHeaders } from './auth';
 const api = 'http://127.0.0.1:8765';
 const password = 'TestPassword123!';
 const pixel = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg==', 'base64');
@@ -167,7 +167,7 @@ test.describe('without a stored session', () => {
     const found = await request.get(`${api}/admin/journeys?q=${encodeURIComponent(name)}`,{headers});
     const journey = (await found.json()).items[0];
     createdJourneys.push(journey.id);
-    expect((await (await request.get(`${api}/journeys/${journey.id}`)).json()).place_ids).toEqual([]);
+    expect((await (await request.get(`${api}/journeys/${journey.id}`,{headers:await viewerHeaders(request)})).json()).place_ids).toEqual([]);
     expect((await request.put(`${api}/admin/places/${pid}`,{headers,data:{publication_status:'published'}})).status()).toBe(200);
     await page.goto(`/map?journey=${journey.id}`);
     await expect(page.locator('.journey-stop-marker')).toHaveCount(1);
