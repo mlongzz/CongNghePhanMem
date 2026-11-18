@@ -392,7 +392,7 @@ def test_busy_service_can_serve_retained_data_without_starting_another_provider_
     asyncio.run(check())
 
 
-def test_endpoint_exposes_stale_metadata_and_retry_after_errors_without_postgres_writes(db_session):
+def test_endpoint_exposes_stale_metadata_and_retry_after_errors_without_postgres_writes(db_session, reader_headers):
     now = [0]; requests = []; down = [False]
     def handler(request):
         requests.append(request)
@@ -400,20 +400,21 @@ def test_endpoint_exposes_stale_metadata_and_retry_after_errors_without_postgres
         return httpx.Response(200, json={"elements": [item()]})
     api = service(handler, clock=lambda: now[0])
     previous = app.dependency_overrides.copy()
+    app.dependency_overrides[get_db] = lambda: db_session
     app.dependency_overrides[get_osm_service] = lambda: api
     try:
         client = TestClient(app)
         url = f"/osm/nearby?latitude={LAT}&longitude={LON}&radius_km=3"
-        first = client.get(url).json()
+        first = client.get(url, headers=reader_headers).json()
         assert not first["stale"] and first["cache_age_seconds"] == 0
         now[0] = 301; down[0] = True
-        saved = client.get(url, headers={"Origin": "http://localhost:8081"})
+        saved = client.get(url, headers={**reader_headers, "Origin": "http://localhost:8081"})
         assert saved.status_code == 200 and saved.json()["elements"] == first["elements"]
         assert saved.json()["stale"] and saved.json()["cache_age_seconds"] == 301
         assert saved.json()["retry_after_seconds"] == 30
         assert saved.headers["access-control-allow-origin"] == "http://localhost:8081"
-        assert client.get(url + "&force_refresh=true").json()["stale"]
-        cold = client.get(url.replace("radius_km=3", "radius_km=5"))
+        assert client.get(url + "&force_refresh=true", headers=reader_headers).json()["stale"]
+        cold = client.get(url.replace("radius_km=3", "radius_km=5"), headers=reader_headers)
         assert cold.status_code == 504 and cold.headers["retry-after"] == "30"
         assert "elements" not in cold.json() and len(requests) == 3
         assert db_session.query(Place).count() == 0
@@ -421,7 +422,7 @@ def test_endpoint_exposes_stale_metadata_and_retry_after_errors_without_postgres
         app.dependency_overrides.clear(); app.dependency_overrides.update(previous)
 
 
-def test_endpoint_is_public_validated_cors_enabled_and_does_not_write_postgres(db_session):
+def test_endpoint_is_authenticated_validated_cors_enabled_and_does_not_write_postgres(db_session, reader_headers):
     requests = []
     def handler(request):
         requests.append(request)
@@ -433,13 +434,13 @@ def test_endpoint_is_public_validated_cors_enabled_and_does_not_write_postgres(d
     try:
         client = TestClient(app)
         url = f"/osm/nearby?latitude={LAT}&longitude={LON}&radius_km=3"
-        response = client.get(url, headers={"Origin": "http://localhost:8081"})
+        response = client.get(url, headers={**reader_headers, "Origin": "http://localhost:8081"})
         assert response.status_code == 200 and response.json()["source"] == "openstreetmap"
         assert response.headers["access-control-allow-origin"] == "http://localhost:8081"
         assert db_session.query(Place).count() == 0
-        assert client.get(f"/places/nearby?latitude={LAT}&longitude={LON}&radius_km=3").json() == []
+        assert client.get(f"/places/nearby?latitude={LAT}&longitude={LON}&radius_km=3", headers=reader_headers).json() == []
         for invalid in ["latitude=91&longitude=0", "latitude=nan&longitude=0", "latitude=0&longitude=inf", "latitude=0&longitude=0&radius_km=21", "latitude=0&longitude=0&radius_km=0"]:
-            assert client.get("/osm/nearby?" + invalid).status_code == 422
+            assert client.get("/osm/nearby?" + invalid, headers=reader_headers).status_code == 422
         assert len(requests) == 1
         preflight = client.options(url, headers={"Origin": "http://localhost:8081", "Access-Control-Request-Method": "GET"})
         assert preflight.status_code == 200

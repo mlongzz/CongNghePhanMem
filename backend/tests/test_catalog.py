@@ -40,7 +40,7 @@ def test_catalog_import_requires_real_admin_role(client, db_session):
     assert db_session.query(Place).count() == 0
 
 
-def test_additive_import_is_atomic_audited_idempotent_and_available_to_public_nearby(client, db_session):
+def test_additive_import_is_atomic_audited_idempotent_and_available_to_public_nearby(client, db_session, reader_headers):
     h = headers(db_session, 'admin')
     preview = client.get('/admin/catalog/hcmc', headers=h).json()
     assert preview['places_to_create'] == 9 and preview['guides_to_create'] == 36
@@ -50,18 +50,18 @@ def test_additive_import_is_atomic_audited_idempotent_and_available_to_public_ne
     assert result.status_code == 200 and result.json()['applied']
     assert db_session.query(Place).count() == 9 and db_session.query(GuideContent).count() == 36
     assert db_session.query(AuditLog).filter_by(action='import').count() == 1
-    assert client.get('/places/nearby?latitude=10.749375&longitude=106.651078&radius_km=3&limit=100').json() == []
+    assert client.get('/places/nearby?latitude=10.749375&longitude=106.651078&radius_km=3&limit=100', headers=reader_headers).json() == []
     for row in result.json()['rows']:
         assert client.put(f"/admin/places/{row['place_id']}", headers=h, json={'publication_status': 'published'}).status_code == 200
-    nearby = client.get('/places/nearby?latitude=10.749375&longitude=106.651078&radius_km=3&limit=100').json()
+    nearby = client.get('/places/nearby?latitude=10.749375&longitude=106.651078&radius_km=3&limit=100', headers=reader_headers).json()
     assert len(nearby) >= 3 and any(row['name'] == 'Chợ Bình Tây' for row in nearby)
     pid = result.json()['rows'][0]['place_id']
     for language in ['vi', 'en', 'fr', 'ja']:
-        before = client.get(f'/places/{pid}/guide-content?language={language}')
+        before = client.get(f'/places/{pid}/guide-content?language={language}', headers=reader_headers)
         assert before.status_code == (404 if language == 'vi' else 200)
         assert language == 'vi' or before.json()['fallback_language'] == 'vi'
         assert client.put(f'/admin/places/{pid}/guide-content/{language}', headers=h, json={'publication_status': 'published'}).status_code == 200
-        assert client.get(f'/places/{pid}/guide-content?language={language}').status_code == 200
+        assert client.get(f'/places/{pid}/guide-content?language={language}', headers=reader_headers).status_code == 200
     repeat = apply_preview(client, h).json()
     assert repeat['places_to_create'] == 0 and repeat['guides_to_create'] == 0
     assert db_session.query(Place).count() == 9

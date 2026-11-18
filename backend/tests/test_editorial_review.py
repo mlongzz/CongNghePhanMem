@@ -2,7 +2,7 @@ from test_admin import client, admin_headers  # noqa: F401
 
 
 def test_echoed_published_status_cannot_publish_changed_place_or_guide(
-    client, admin_headers
+    client, admin_headers, reader_headers
 ):
     place = client.post(
         "/admin/places",
@@ -24,7 +24,7 @@ def test_echoed_published_status_cannot_publish_changed_place_or_guide(
         },
     )
     assert edited.json()["publication_status"] == "draft"
-    assert client.get(f"/places/{pid}").status_code == 404
+    assert client.get(f"/places/{pid}", headers=reader_headers).status_code == 404
     assert (
         client.put(
             f"/admin/places/{pid}",
@@ -56,7 +56,7 @@ def test_echoed_published_status_cannot_publish_changed_place_or_guide(
         },
     )
     assert edited.json()["publication_status"] == "draft"
-    assert client.get(f"/places/{pid}/guide-content?language=vi").status_code == 404
+    assert client.get(f"/places/{pid}/guide-content?language=vi", headers=reader_headers).status_code == 404
     assert (
         client.put(
             path, headers=admin_headers, json={"publication_status": "published"}
@@ -64,6 +64,6 @@ def test_echoed_published_status_cannot_publish_changed_place_or_guide(
         == 200
     )
     assert (
-        client.get(f"/places/{pid}/guide-content?language=vi").json()["content"]
+        client.get(f"/places/{pid}/guide-content?language=vi", headers=reader_headers).json()["content"]
         == "New unreviewed fixture"
     )

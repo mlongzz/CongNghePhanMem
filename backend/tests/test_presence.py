@@ -20,7 +20,7 @@ def start(client,auth,identity=None):
     return response.json()
 
 
-def test_presence_auth_ownership_and_admin_rbac(client,db_session,now):
+def test_presence_auth_ownership_and_admin_rbac(client,db_session,now, reader_headers):
     first=headers(db_session,email='first@presence.example')
     other=headers(db_session,email='other@presence.example')
     row=start(client,first)
@@ -30,7 +30,7 @@ def test_presence_auth_ownership_and_admin_rbac(client,db_session,now):
     for path in ('/admin/presence','/admin/presence/summary','/admin/presence/users/1'):
         assert client.get(path,headers=first).status_code==403
         assert client.get(path).status_code==401
-    assert client.get('/presence/policy').json()['offline_after_seconds']==90
+    assert client.get('/presence/policy', headers=reader_headers).json()['offline_after_seconds']==90
 
 
 def test_tabs_devices_deduplicate_online_users_and_start_retries(client,db_session,admin_headers,now):

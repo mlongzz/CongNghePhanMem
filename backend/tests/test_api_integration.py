@@ -97,6 +97,7 @@ def test_users_me_rejects_invalid_credentials_and_keeps_cors(api_client: TestCli
 def test_place_guide_favorite_history_audio_and_review_routes(
     api_client: TestClient,
     db_session: Session,
+    reader_headers,
 ) -> None:
     place = Place(name="Integration Museum", latitude=16.46, longitude=107.59)
     db_session.add(place)
@@ -113,12 +114,12 @@ def test_place_guide_favorite_history_audio_and_review_routes(
     user_id, access_token, _refresh_token = register_and_login(api_client)
     headers = {"Authorization": f"Bearer {access_token}"}
 
-    assert api_client.get("/places?limit=0").status_code == 422
-    assert api_client.get(f"/places/search?q=Integration").json()[0]["id"] == place.id
+    assert api_client.get("/places?limit=0", headers=reader_headers).status_code == 422
+    assert api_client.get(f"/places/search?q=Integration", headers=reader_headers).json()[0]["id"] == place.id
     assert api_client.get(
-        f"/places/nearby?latitude=16.46&longitude=107.59&radius_km=1"
+        f"/places/nearby?latitude=16.46&longitude=107.59&radius_km=1", headers=reader_headers
     ).json()[0]["id"] == place.id
-    guide = api_client.get(f"/places/{place.id}/guide-content?language=vi")
+    guide = api_client.get(f"/places/{place.id}/guide-content?language=vi", headers=reader_headers)
     assert guide.status_code == 200
     assert guide.json()["language_code"] == "vi"
 
@@ -152,7 +153,7 @@ def test_place_guide_favorite_history_audio_and_review_routes(
         headers=headers,
     )
     assert review.status_code == 201
-    summary = api_client.get(f"/places/{place.id}/reviews/summary")
+    summary = api_client.get(f"/places/{place.id}/reviews/summary", headers=reader_headers)
     assert summary.status_code == 200
     assert summary.json()["average_rating"] == 5.0
 
