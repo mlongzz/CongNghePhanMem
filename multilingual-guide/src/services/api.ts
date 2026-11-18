@@ -35,7 +35,9 @@ export function setSessionRecovery(handler: typeof recoverSession) { recoverSess
 let tokenProvider: (() => string | null) | null = null;
 export function setTokenProvider(provider: typeof tokenProvider) { tokenProvider = provider; }
 export function getAccountToken(): string | null { return tokenProvider?.() ?? null; }
+function isApiUrl(url: string): boolean { return Boolean(API_BASE_URL) && url.startsWith(`${API_BASE_URL}/`); }
 export async function fetchWithAccount(url: string, init: RequestInit & { headers?: Record<string, string> }): Promise<Response> {
+  if (!isApiUrl(url)) return fetch(url, init);
   const send = (token: string | null) => fetch(url, { ...init, headers: { ...init.headers, ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
   const used = getAccountToken();
   const response = await send(used);
@@ -45,6 +47,7 @@ export async function fetchWithAccount(url: string, init: RequestInit & { header
 }
 
 function sendsAccountToken(path: string, method?: string): boolean {
+  if (!path.startsWith('/') || path.startsWith('//')) return false;
   if (/^\/(auth\/|health|media\/|openapi\.json)/.test(path)) return false;
   return !(path === '/users' && method?.toUpperCase() === 'POST');
 }
@@ -71,7 +74,7 @@ export async function apiFetch<T>(
   if (!API_BASE_URL)
     throw new Error("Dịch vụ hiện chưa sẵn sàng. Vui lòng thử lại sau.");
   const { token: explicitToken, headers, timeoutMs, ...init } = options ?? {};
-  const token = explicitToken ?? (sendsAccountToken(path, init.method) ? tokenProvider?.() ?? undefined : undefined);
+  const token = (path.startsWith('/') && !path.startsWith('//') ? explicitToken : undefined) ?? (sendsAccountToken(path, init.method) ? tokenProvider?.() ?? undefined : undefined);
   if (init.signal?.aborted) { const error = new Error('Đã hủy yêu cầu.'); error.name = 'AbortError'; throw error; }
   const controller = new AbortController();
   const cancel = () => controller.abort();
@@ -79,7 +82,7 @@ export async function apiFetch<T>(
   const configuredTimeout = timeoutMs ?? Number(process.env.EXPO_PUBLIC_API_TIMEOUT_MS || '12000');
   const timeout = setTimeout(() => controller.abort(), Number.isFinite(configuredTimeout) ? Math.max(1000, Math.min(120000, configuredTimeout)) : 12000);
   try {
-    const response = await fetch(`${API_BASE_URL}${path}`, {
+    const response = await fetch(/^[a-z][a-z0-9+.-]*:|^\/\//i.test(path) ? path : `${API_BASE_URL}${path}`, {
       ...init,
       signal: controller.signal,
       headers: buildRequestHeaders(init.body, token, headers),
