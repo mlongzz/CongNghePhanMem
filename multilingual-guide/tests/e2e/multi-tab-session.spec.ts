@@ -52,3 +52,66 @@ test('two tabs recovering an expired access token at the same time both stay sig
     await context.close();
   }
 });
+
+test('signing in as another account in one tab moves the other tab to that account without clearing the shared session', async ({ browser, request }) => {
+  const first = unique('first');
+  const second = unique('second');
+  expect((await registerApi(request, 'First User', first, PASSWORD)).status()).toBe(201);
+  expect((await registerApi(request, 'Second User', second, PASSWORD)).status()).toBe(201);
+  const context = await browser.newContext({ storageState: storageStateFor(await loginApi(request, first, PASSWORD)) });
+  try {
+    const [tabA, tabB] = [await context.newPage(), await context.newPage()];
+    await tabA.goto(`${ORIGIN}/profile`);
+    await tabB.goto(`${ORIGIN}/profile`);
+    await expect(tabB.getByText(first, { exact: true })).toBeVisible();
+
+    await tabA.getByText('Đăng xuất', { exact: true }).click();
+    await expect(tabA).toHaveURL(`${ORIGIN}/login`);
+    await expect(tabB).toHaveURL(/\/login/);
+
+    await tabA.getByLabel('Địa chỉ email', { exact: true }).fill(second);
+    await tabA.getByLabel('Mật khẩu', { exact: true }).fill(PASSWORD);
+    await tabA.getByRole('button', { name: 'Đăng nhập', exact: true }).click();
+    await expect(tabA).not.toHaveURL(/\/login/);
+
+    await expect(tabB).not.toHaveURL(/\/login/, { timeout: 15_000 });
+    await tabB.goto(`${ORIGIN}/profile`);
+    await expect(tabB.getByText(second, { exact: true })).toBeVisible();
+    await expect(tabB.getByText(first, { exact: true })).toHaveCount(0);
+    const access = await stored(tabA, ACCESS_KEY);
+    expect(access).toBeTruthy();
+    expect(await stored(tabB, ACCESS_KEY)).toBe(access);
+    expect(await stored(tabB, REFRESH_KEY)).toBeTruthy();
+    const me = await request.get(`${API}/users/me`, { headers: { Authorization: `Bearer ${access}` } });
+    expect((await me.json()).email).toBe(second);
+  } finally {
+    await context.close();
+  }
+});
+
+test('a tab that sees the shared session switch straight to another account adopts it and keeps the new tokens', async ({ browser, request }) => {
+  const first = unique('direct-first');
+  const second = unique('direct-second');
+  expect((await registerApi(request, 'First User', first, PASSWORD)).status()).toBe(201);
+  expect((await registerApi(request, 'Second User', second, PASSWORD)).status()).toBe(201);
+  const context = await browser.newContext({ storageState: storageStateFor(await loginApi(request, first, PASSWORD)) });
+  try {
+    const [tabA, tabB] = [await context.newPage(), await context.newPage()];
+    await tabB.goto(`${ORIGIN}/profile`);
+    await expect(tabB.getByText(first, { exact: true })).toBeVisible();
+    await tabA.goto(`${ORIGIN}/login`);
+    const next = await loginApi(request, second, PASSWORD);
+    await tabA.evaluate(([accessKey, refreshKey, access, refresh]) => {
+      localStorage.setItem(accessKey, access);
+      localStorage.setItem(refreshKey, refresh);
+    }, [ACCESS_KEY, REFRESH_KEY, next.access_token, next.refresh_token]);
+
+    await expect(tabB.getByText(second, { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(tabB).toHaveURL(`${ORIGIN}/profile`);
+    await tabA.waitForTimeout(1000);
+    expect(await stored(tabA, ACCESS_KEY)).toBe(next.access_token);
+    expect(await stored(tabB, REFRESH_KEY)).toBe(next.refresh_token);
+  } finally {
+    await context.close();
+  }
+});
