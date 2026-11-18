@@ -12,3 +12,6 @@ export async function writeRefreshToken(token: string | null) {
   if (token) await SecureStore.setItemAsync(REFRESH_KEY, token);
   else await SecureStore.deleteItemAsync(REFRESH_KEY);
 }
+
+export function withRefreshLock<T>(task: () => Promise<T>): Promise<T> { return task(); }
+export function subscribeSessionStorage(_listener: () => void): () => void { return () => {}; }

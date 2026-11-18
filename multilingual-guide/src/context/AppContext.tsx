@@ -12,14 +12,14 @@ import { AppState as NativeAppState, Platform } from "react-native";
 import * as Speech from "expo-speech";
 import { LANGS, type Language, type Place, type NarrationContent } from "../data/places";
 import { type Coordinates, fetchNearbyPlaces, validateBackendPlace } from "../services/nearby";
-import { getSessionToken, writeSessionToken, getRefreshToken, writeRefreshToken } from "../services/session";
+import { getSessionToken, writeSessionToken, getRefreshToken, writeRefreshToken, withRefreshLock, subscribeSessionStorage } from "../services/session";
 import { apiFetch, checkAdmin, getUserProfile, refreshTokens, revokeSession, ApiError, setSessionRecovery, setTokenProvider, type UserResponse } from "../services/api";
 import { createSpeechPlayer, createWebSpeechDriver, type PlayerState } from "../services/speechPlayer";
 import { resolveNarration, NO_NARRATION } from "../services/narration";
 import { validateDiscoveredPlace, parseDiscoveredPlaces, serializeDiscoveredPlaces } from "../services/placeRegistry";
 import { getCurrentCoordinates, type LocationCoordinates } from "../services/location";
 
-import { restoreOutcome, refreshAndPersist, SESSION_UNVERIFIED_NOTICE } from '../services/sessionRestore';
+import { restoreOutcome, refreshAndPersist, classifyStorageChange, SESSION_UNVERIFIED_NOTICE } from '../services/sessionRestore';
 import { isCatalogFresh } from '../services/catalogCache';
 import { isSystemFavorite, mergeGuestFavorites } from '../services/favoriteMerge';
 import { LANGUAGE_STORAGE_KEY } from '../hooks/useStoredLanguage';
@@ -161,8 +161,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     refreshRef.current = result.refresh_token;
     return result;
   }, []);
-  const logout = useCallback(() => {
-    const refresh = refreshRef.current;
+  const logout = useCallback((options?: { revoke?: boolean }) => {
+    const refresh = options?.revoke === false ? null : refreshRef.current;
     refreshRef.current = null;
     setSessionNotice(''); setSessionUnverified(false);
     speechSeq.current++;
@@ -208,19 +208,33 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (failed !== tokenRef.current) return tokenRef.current;
       if (!recovery.current) {
         const seq = authSeq.current;
-        recovery.current = (async () => {
+        const adopt = async (access: string, refresh: string) => {
+          if (seq !== authSeq.current) return null;
+          await loginWithTokens(access, refresh);
+          return tokenRef.current;
+        };
+        recovery.current = withRefreshLock(async () => {
           try {
+            const storedAccess = await getSessionToken();
+            if (storedAccess && storedAccess !== failed) return await adopt(storedAccess, (await getRefreshToken()) ?? '');
             const refresh = await getRefreshToken();
             if (!refresh) { expire(); return null; }
-            const result = await rotateTokens(refresh);
-            if (seq !== authSeq.current) return null;
-            await loginWithTokens(result.access_token, result.refresh_token);
-            return tokenRef.current;
+            let result;
+            try { result = await rotateTokens(refresh); }
+            catch (e) {
+              if (e instanceof ApiError && e.status === 401) {
+                const newerAccess = await getSessionToken();
+                const newerRefresh = await getRefreshToken();
+                if (newerAccess && newerRefresh && newerRefresh !== refresh) return await adopt(newerAccess, newerRefresh);
+              }
+              throw e;
+            }
+            return await adopt(result.access_token, result.refresh_token);
           } catch (e) {
             if (e instanceof ApiError && e.status === 401) expire();
             throw e;
           } finally { recovery.current = null; }
-        })();
+        });
       }
       return recovery.current;
     });
@@ -249,6 +263,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [expire, loginWithTokens, rotateTokens]);
   useEffect(() => { void Promise.resolve().then(restoreSession); }, [restoreSession]);
   const retrySession = useCallback(() => { setAuthLoading(true); void restoreSession(); }, [restoreSession]);
+  useEffect(() => subscribeSessionStorage(() => {
+    void (async () => {
+      const [access, refresh] = await Promise.all([getSessionToken(), getRefreshToken()]);
+      const change = classifyStorageChange(tokenRef.current, access, refresh);
+      if (change.kind === 'ignore' && access && access === tokenRef.current && refresh) refreshRef.current = refresh;
+      else if (change.kind === 'signed-out') { setSignedOutByUser(true); logout({ revoke: false }); }
+      else if (change.kind === 'rotated') {
+        tokenRef.current = change.access;
+        refreshRef.current = change.refresh || null;
+        saveToken(change.access);
+        setAdminToken(current => current ? change.access : null);
+      } else if (change.kind === 'switched') {
+        if (tokenRef.current) logout({ revoke: false });
+        setSignedOutByUser(false);
+        if (access) void loginWithTokens(access, refresh ?? '').catch(() => logout({ revoke: false }));
+      }
+    })();
+  }), [logout, loginWithTokens, setSignedOutByUser]);
   useEffect(() => {
     if (!sessionUnverified) return;
     const retry = () => { void restoreSession(); };
