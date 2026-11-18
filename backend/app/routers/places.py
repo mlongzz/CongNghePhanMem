@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
 from app.database import get_db
-from app.dependencies import get_current_admin
+from app.dependencies import get_current_admin, get_current_user
 from app.models.admin import AuditLog
 from app.models.user import User
 from app.schemas.place import NearbyPlaceResponse, PlaceCreate, PlaceResponse, PlaceUpdate
@@ -26,7 +26,7 @@ router = APIRouter(prefix="/places", tags=["Places"])
 
 # ─── NOTE: static sub-paths (/search, /nearby) must come before /{place_id} ──
 
-@router.get("/search", response_model=list[PlaceResponse])
+@router.get("/search", response_model=list[PlaceResponse], dependencies=[Depends(get_current_user)])
 def search_places_api(
     q: str = Query(min_length=1, max_length=100, description="Search keyword"),
     limit: int = Query(default=20, ge=1, le=100),
@@ -37,7 +37,7 @@ def search_places_api(
     return public_place_values(db, search_places(db, q, limit, offset))
 
 
-@router.get("/nearby", response_model=list[NearbyPlaceResponse])
+@router.get("/nearby", response_model=list[NearbyPlaceResponse], dependencies=[Depends(get_current_user)])
 def get_nearby_places_api(
     latitude: float = Query(..., ge=-90, le=90, allow_inf_nan=False),
     longitude: float = Query(..., ge=-180, le=180, allow_inf_nan=False),
@@ -59,7 +59,7 @@ def get_nearby_places_api(
 
 # ─── Collection endpoints ─────────────────────────────────────────────────────
 
-@router.get("", response_model=list[PlaceResponse])
+@router.get("", response_model=list[PlaceResponse], dependencies=[Depends(get_current_user)])
 def get_places_api(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
@@ -86,7 +86,7 @@ def create_place_api(
 
 # ─── Item endpoints ───────────────────────────────────────────────────────────
 
-@router.get("/{place_id}", response_model=PlaceResponse)
+@router.get("/{place_id}", response_model=PlaceResponse, dependencies=[Depends(get_current_user)])
 def get_place_api(place_id: int, db: Session = Depends(get_db)):
     """Return a single place by ID."""
     place = get_place_by_id(db, place_id)

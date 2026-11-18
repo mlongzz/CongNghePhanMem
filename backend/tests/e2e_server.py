@@ -23,7 +23,7 @@ os.environ["APP_ENV"] = "test"
 os.environ["MEDIA_STORAGE_BACKEND"] = "local"
 # One fixture Admin is used repeatedly by the whole browser suite. Throttle logic
 # remains enabled; production defaults and rejection are tested separately in pytest.
-os.environ['AUTH_LOGIN_LIMIT'] = '200'
+os.environ['AUTH_LOCK_FAILURES'] = '1000'
 os.environ['AUTH_IP_LOGIN_LIMIT'] = '1000'
 
 from app.database import Base, engine, SessionLocal

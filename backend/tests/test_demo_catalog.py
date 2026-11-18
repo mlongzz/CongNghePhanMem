@@ -19,7 +19,7 @@ def test_demo_has_verified_unique_coordinates_and_free_exact_file_images():
         raw=row.model_dump();raw['image']['url']='https://upload.wikimedia.org.attacker.test/a.jpg'
         with pytest.raises(ValueError): DemoPlace.model_validate(raw)
 
-def test_demo_preview_import_repeat_and_photos_remain_pending(db_session, monkeypatch):
+def test_demo_preview_import_repeat_and_photos_remain_pending(db_session, monkeypatch, reader_headers):
     from app.services import source_metadata
     monkeypatch.setattr(source_metadata,'resolve_metadata',lambda *args:pytest.fail('Demo image suggestions must not depend on Wikipedia'))
     actor=User(email='demo-admin@example.test',full_name='Demo Admin',role='admin',password_hash='unused')
@@ -36,7 +36,7 @@ def test_demo_preview_import_repeat_and_photos_remain_pending(db_session, monkey
         assert applied.status_code==200,applied.text
         rows=db_session.query(Place).all()
         assert len(rows)==15 and all(row.publication_status=='draft' and row.description and row.image_url is None for row in rows)
-        assert client.get('/places').json()==[]
+        assert client.get('/places', headers=reader_headers).json()==[]
         row=rows[0]
         images=client.post(f'/admin/places/{row.id}/images/suggestions',headers=headers,json={})
         assert images.status_code==200 and images.json()['method']=='reviewed_demo_identity'

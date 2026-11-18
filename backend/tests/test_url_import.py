@@ -113,7 +113,7 @@ def test_known_urls_map_to_fixed_provider_identity(url, expected):
 
 
 def test_preview_edit_import_is_draft_and_idempotent_with_pending_image(
-    client, admin_headers, providers, db_session
+    client, admin_headers, providers, db_session, reader_headers
 ):
     response = client.post(
         "/admin/imports/url/preview",
@@ -133,7 +133,7 @@ def test_preview_edit_import_is_draft_and_idempotent_with_pending_image(
     assert saved.status_code == 200 and saved.json()["created"] is True
     row = saved.json()["place"]
     assert row["publication_status"] == "draft" and row["image_url"] is None
-    assert client.get(f"/places/{row['id']}").status_code == 404
+    assert client.get(f"/places/{row['id']}", headers=reader_headers).status_code == 404
     images = client.get(
         f"/admin/places/{row['id']}/images", headers=admin_headers
     ).json()

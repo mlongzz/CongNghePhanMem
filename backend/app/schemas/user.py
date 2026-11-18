@@ -16,10 +16,18 @@ class UserCreate(EmailInput):
     password: str = Field(
         min_length=8,
         max_length=128,
-        description="Password must be at least 8 characters",
+        description="8-128 characters with a lowercase letter, an uppercase letter and a digit",
     )
     full_name: str = Field(min_length=1, max_length=100)
     language: str = Field(default="vi", min_length=2, max_length=10)
+
+    @field_validator('password')
+    @classmethod
+    def password_is_strong(cls, value):
+        if not (any(c.islower() for c in value) and any(c.isupper() for c in value)
+                and any(c.isdigit() for c in value)):
+            raise ValueError('Password must contain a lowercase letter, an uppercase letter and a digit')
+        return value
 
 
 class UserUpdate(EmailInput):

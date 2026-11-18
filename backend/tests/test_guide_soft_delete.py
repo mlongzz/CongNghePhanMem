@@ -88,16 +88,16 @@ def test_overview_counts_only_live_guides(client, headers, db_session, guide):
     assert db_session.execute(text("SELECT COUNT(*) FROM guide_contents")).scalar() == 1
 
 
-def test_deleted_guide_hidden_from_visitors(client, headers, db_session, guide):
+def test_deleted_guide_hidden_from_visitors(client, headers, db_session, guide, reader_headers):
     place_id = guide.place_id
-    assert client.get(f"/places/{place_id}/guide-content?language=vi").status_code == 200
-    assert client.get(f"/places/{place_id}/guide-content/languages").json() == ["vi"]
-    assert client.get(f"/places/{place_id}").json()["description_translations"] == {"vi": "Noi dung"}
+    assert client.get(f"/places/{place_id}/guide-content?language=vi", headers=reader_headers).status_code == 200
+    assert client.get(f"/places/{place_id}/guide-content/languages", headers=reader_headers).json() == ["vi"]
+    assert client.get(f"/places/{place_id}", headers=reader_headers).json()["description_translations"] == {"vi": "Noi dung"}
     client.delete(f"/admin/guides/{guide.id}", headers=headers)
-    assert client.get(f"/places/{place_id}/guide-content?language=vi").status_code == 404
-    assert client.get(f"/places/{place_id}/guide-content/languages").json() == []
-    assert client.get(f"/places/{place_id}").json()["description_translations"] == {}
-    assert client.get("/places").json()[0]["description_translations"] == {}
+    assert client.get(f"/places/{place_id}/guide-content?language=vi", headers=reader_headers).status_code == 404
+    assert client.get(f"/places/{place_id}/guide-content/languages", headers=reader_headers).json() == []
+    assert client.get(f"/places/{place_id}", headers=reader_headers).json()["description_translations"] == {}
+    assert client.get("/places", headers=reader_headers).json()[0]["description_translations"] == {}
 
 
 def test_legacy_guide_routes_reject_deleted_guide(client, headers, guide):

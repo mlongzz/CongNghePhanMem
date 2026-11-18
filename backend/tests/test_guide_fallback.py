@@ -31,33 +31,33 @@ def make_place(db_session):
     return build
 
 
-def test_missing_language_falls_back_to_vietnamese(client, make_place):
+def test_missing_language_falls_back_to_vietnamese(client, make_place, reader_headers):
     pid = make_place(vi="published", en="published")
-    body = client.get(f"/places/{pid}/guide-content?language=JA").json()
+    body = client.get(f"/places/{pid}/guide-content?language=JA", headers=reader_headers).json()
     assert body["language_code"] == "vi"
     assert body["requested_language"] == "ja"
     assert body["fallback_language"] == "vi"
     assert body["content"] == "text vi"
 
 
-def test_exact_language_has_no_fallback(client, make_place):
+def test_exact_language_has_no_fallback(client, make_place, reader_headers):
     pid = make_place(vi="published", ja="published")
-    body = client.get(f"/places/{pid}/guide-content?language=ja").json()
+    body = client.get(f"/places/{pid}/guide-content?language=ja", headers=reader_headers).json()
     assert body["language_code"] == "ja"
     assert body["requested_language"] == "ja"
     assert body["fallback_language"] is None
 
 
-def test_fallback_prefers_english_then_any_published(client, make_place):
-    assert client.get(f"/places/{make_place(en='published', fr='published')}/guide-content?language=ja").json()["fallback_language"] == "en"
-    assert client.get(f"/places/{make_place(fr='published')}/guide-content?language=ja").json()["fallback_language"] == "fr"
+def test_fallback_prefers_english_then_any_published(client, make_place, reader_headers):
+    assert client.get(f"/places/{make_place(en='published', fr='published')}/guide-content?language=ja", headers=reader_headers).json()["fallback_language"] == "en"
+    assert client.get(f"/places/{make_place(fr='published')}/guide-content?language=ja", headers=reader_headers).json()["fallback_language"] == "fr"
 
 
-def test_fallback_ignores_drafts(client, make_place):
+def test_fallback_ignores_drafts(client, make_place, reader_headers):
     pid = make_place(vi="draft", en="published")
-    assert client.get(f"/places/{pid}/guide-content?language=ja").json()["fallback_language"] == "en"
+    assert client.get(f"/places/{pid}/guide-content?language=ja", headers=reader_headers).json()["fallback_language"] == "en"
 
 
-def test_no_published_guide_is_not_found(client, make_place):
-    assert client.get(f"/places/{make_place(vi='draft')}/guide-content?language=vi").status_code == 404
-    assert client.get(f"/places/{make_place()}/guide-content?language=vi").status_code == 404
+def test_no_published_guide_is_not_found(client, make_place, reader_headers):
+    assert client.get(f"/places/{make_place(vi='draft')}/guide-content?language=vi", headers=reader_headers).status_code == 404
+    assert client.get(f"/places/{make_place()}/guide-content?language=vi", headers=reader_headers).status_code == 404
