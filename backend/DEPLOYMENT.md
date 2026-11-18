@@ -39,8 +39,27 @@ after reviewing a backup. Migration 0006 stops on normalized email collisions an
 does not delete/merge accounts. Migration 0007 adds rotating refresh sessions and
 database-backed login limits. Old refresh JWTs require one new login. Logout
 revokes the refresh family; already issued access tokens remain valid until expiry
-(60 minutes by default). Fixed five-minute limits default to 12/account and 120/IP;
-the server trusts its connection peer, not a client-provided forwarding header.
+(60 minutes by default). Per-IP requests are limited to
+`AUTH_IP_LOGIN_LIMIT` (default 120) per five-minute window; the server trusts its
+connection peer, not a client-provided forwarding header.
+
+Account lock environment variables (replace the removed `AUTH_LOGIN_LIMIT`):
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `AUTH_LOCK_FAILURES` | 5 | Wrong passwords that lock the account |
+| `AUTH_LOCK_WINDOW_SECONDS` | 900 | Window in which failures are counted |
+| `AUTH_LOCK_SECONDS` | 300 | Lock duration; the 6th attempt onward gets 429 `login_locked`, even with the right password |
+| `AUTH_IP_LOGIN_LIMIT` | 120 | Login requests per IP per five minutes (429 `login_rate_limited`) |
+
+Attempts are reserved atomically before the password is verified, so parallel
+guesses cannot exceed the limit. A correct password clears the failure counter but
+never an existing lock.
+
+All read endpoints now require `Authorization: Bearer <access_token>` and return 401
+otherwise: `/places*`, `/journeys*`, `/osm/nearby`, `/settings`, `/presence/policy`.
+Only `/`, `/health/*`, `/docs`, `/redoc`, `/openapi.json`, `/media/{name}`,
+`POST /users` and `/auth/login|refresh|logout` stay public.
 
 No GitHub Actions run, GHCR publish or deployment has been performed by this repair
 session. Docker CLI is installed locally but its daemon is unavailable. The root

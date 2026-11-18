@@ -78,21 +78,28 @@ def login(login_data: LoginRequest, request: Request, db: Session = Depends(get_
         login_throttle.consume_ip_attempt(db, request.client.host if request.client else 'unknown')
     except login_throttle.LoginRejected as rejected:
         return _rejection(rejected)
+    rejected = None
+    attempt = 0
+    try:
+        attempt = login_throttle.reserve_login_attempt(db, login_data.email)
+    except login_throttle.LoginRejected as exc:
+        rejected = exc
     user = get_user_by_email(db, login_data.email)
-    # Always run the same expensive password verifier, including unknown accounts.
+    # Always run the same expensive password verifier, including unknown accounts and locked ones.
     valid_password = verify_password(login_data.password, user.password_hash if user else _DUMMY_HASH)
-
-    locked_for = login_throttle.lock_retry_after(db, login_data.email)
-    if locked_for:
-        return _rejection(login_throttle.LoginRejected('login_locked', login_throttle.LOCK_MESSAGE, locked_for))
+    if rejected:
+        return _rejection(rejected)
 
     if not user or not valid_password:
-        login_throttle.record_failed_login(db, login_data.email)
+        login_throttle.record_failed_login(db, login_data.email, attempt)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
         )
-    login_throttle.clear_failed_logins(db, login_data.email)
+    login_throttle.release_login_attempt(db, login_data.email)
+    locked_for = login_throttle.lock_retry_after(db, login_data.email)
+    if locked_for:
+        return _rejection(login_throttle.LoginRejected('login_locked', login_throttle.LOCK_MESSAGE, locked_for))
 
     session_id = str(uuid.uuid4())
     token, digest = _refresh_pair(user.id, session_id)
