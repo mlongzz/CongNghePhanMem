@@ -53,6 +53,27 @@ Database cũ: sao lưu và kiểm tra baseline trước; chạy `python -m scrip
 
 API tương tác: `http://127.0.0.1:8000/docs`; readiness: `/health/ready`. Không chạy seed/import lên dữ liệu thật để thử ứng dụng.
 
+## Khôi phục ảnh bị thiếu khi chép dự án
+
+Database chỉ lưu đường dẫn ảnh; các file trong `backend/uploads` không nằm trong Git.
+Nếu địa điểm vẫn có nhưng ảnh trả 404, từ thư mục gốc chạy:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m scripts.restore_bundled_media
+.\.venv\Scripts\python.exe -m scripts.restore_bundled_media --apply
+```
+
+Công cụ chỉ khôi phục file bị thiếu từ bộ ảnh Quận 1 đóng gói sẵn khi SHA-256 khớp
+chính xác với bản ghi ảnh trong database local. Giữ nguyên URL, file đã có và toàn
+bộ dữ liệu database; không tải ảnh từ mạng. Ảnh upload riêng cần được khôi phục từ
+bản sao lưu thư mục upload. Tải lại trang sau khi hoàn tất.
+
+Map web tự chuyển từ MapTiler (nếu cấu hình) sang OpenStreetMap rồi OpenStreetMap
+France nếu nguồn trước bị lỗi hoặc không phản hồi. Có nút **Thử tải lại bản đồ**
+khi các nguồn đều lỗi. Nguồn France dành cho ứng dụng công khai, phi lợi nhuận,
+lưu lượng nhỏ theo [điều kiện sử dụng](https://www.openstreetmap.fr/usage/).
+
 ## Cấp Admin
 
 Đăng ký tài khoản, xem ID trong DB phát triển. Thêm ID tin cậy vào `ADMIN_USER_IDS` trong cấu hình backend, khởi động lại và đăng nhập lại. Backend chấp nhận `role=admin` hoặc ID trong `ADMIN_USER_IDS`; người đăng ký không tự cấp quyền qua payload. Bảng người dùng phân biệt vai trò CSDL, quyền Admin thực tế và nguồn cấp quyền. Tài khoản trong `ADMIN_USER_IDS` không thể bị đổi vai trò/xóa qua API; cần quản lý cấu hình máy chủ.
@@ -139,4 +160,4 @@ Nếu bản làm việc không có `.git`, không khởi tạo lịch sử để
 - [Demo đã cập nhật ngày 01/11/2026](docs/DEMO_RELEASE_2026-11-01.md)
 - [Báo cáo sửa chữa, bằng chứng và điểm tham khảo](docs/REPAIR_ACCEPTANCE_REPORT.md)
 
-Workflow kiểm tra SQLite/PostgreSQL, frontend, E2E và Docker. [Lần chạy của commit `ceb59a1`](https://github.com/mlongzz/sgu_CongNghePhanMem/actions/runs/41191217605) đã đạt; commit mới phải có kết quả riêng trong PR. Chỉ tag `v*` sau khi tất cả job đạt mới publish image lên GHCR; chưa publish hoặc deploy production.
+[Workflow](.github/workflows/ci.yml) kiểm tra SQLite/PostgreSQL, frontend, E2E và Docker. Mỗi commit mới phải có kết quả riêng trong PR. Chỉ tag `v*` sau khi tất cả job đạt mới publish image lên GHCR; chưa publish hoặc deploy production.
