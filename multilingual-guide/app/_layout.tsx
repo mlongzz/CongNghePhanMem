@@ -5,6 +5,7 @@ import {AppProvider} from '../src/context/AppContext';
 import {JourneyProvider} from '../src/context/JourneyContext';
 import {C} from '../src/theme/colors';
 import PresenceBoundary from '../src/components/PresenceBoundary';
+import AuthGate from '../src/components/AuthGate';
 import {useFonts} from 'expo-font';
 import {Ionicons} from '@expo/vector-icons';
 import ErrorScreen from '../src/components/ErrorScreen';
@@ -22,5 +23,5 @@ export function ErrorBoundary({retry}:ErrorBoundaryProps){
 export default function RootLayout(){
   // Register icon glyphs during static rendering, before their first client render.
   useFonts(Ionicons.font);
-  return <AppProvider><JourneyProvider><PresenceBoundary><StatusBar style="dark" /><Stack screenOptions={{headerShown:false,contentStyle:{backgroundColor:C.paper}}} /></PresenceBoundary></JourneyProvider></AppProvider>;
+  return <AppProvider><JourneyProvider><PresenceBoundary><StatusBar style="dark" /><AuthGate><Stack screenOptions={{headerShown:false,contentStyle:{backgroundColor:C.paper}}} /></AuthGate></PresenceBoundary></JourneyProvider></AppProvider>;
 }

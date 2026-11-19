@@ -1,9 +1,12 @@
 import {test,expect} from '@playwright/test';
+import { GUEST_STATE, viewerHeaders } from './auth';
+
+test.use({ storageState: GUEST_STATE });
 const api='http://127.0.0.1:8765';
 const pixel=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg==','base64');
 test('Admin previews all 15 licensed demo places without importing or calling Wikipedia',async({page,request})=>{
- const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));let externalApi=0,imports=0;
- const before=await(await request.get(api+'/places?limit=100')).json();
+ const readHeaders=await viewerHeaders(request);const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));let externalApi=0,imports=0;
+ const before=await(await request.get(api+'/places?limit=100',{headers:readHeaders})).json();
  await page.route('https://upload.wikimedia.org/**',r=>r.fulfill({contentType:'image/png',body:pixel}));
  await page.route('https://thumb.wikimedia.org/**',r=>r.fulfill({contentType:'image/png',body:pixel}));
  await page.route(/https:\/\/[^/]*(?:wikipedia|wikimedia)\.org\/w\/api\.php/,r=>{externalApi++;return r.abort();});
@@ -16,6 +19,6 @@ test('Admin previews all 15 licensed demo places without importing or calling Wi
  await expect(page.getByText('Chùa Giác Lâm',{exact:true}).first()).toBeVisible();
  await expect(page.getByText('DoktorMax · Public domain',{exact:true})).toBeVisible();
  await expect(page.getByText('Nguồn ảnh và giấy phép ↗',{exact:true})).toHaveCount(15);
- expect(imports).toBe(0);expect(externalApi).toBe(0);expect(await(await request.get(api+'/places?limit=100')).json()).toEqual(before);expect(errors).toEqual([]);
+ expect(imports).toBe(0);expect(externalApi).toBe(0);expect(await(await request.get(api+'/places?limit=100',{headers:readHeaders})).json()).toEqual(before);expect(errors).toEqual([]);
  await page.screenshot({path:'test-results/admin-demo-preview.png',fullPage:true});
 });

@@ -21,9 +21,9 @@ function sameLandmark(official: Place, other: Place): boolean {
     const union = new Set([...x, ...y]).size;
     return union ? [...x].filter(t => y.has(t)).length / union : 0;
   };
-  // Same spot: half of all name words in common (e.g. "Đền Bà Mariamman" / "Đền Bà Ấn").
+  // Same spot: at least half of all name words are shared.
   if (metres < 25 && jaccard(a, b) >= 0.5) return true;
-  // Nearby: the distinctive words (not "nhà", "chùa", "tháp"…) mostly agree.
+  // Nearby: the distinctive (non-generic) name words mostly agree.
   const distinct = (x: Set<string>) => new Set([...x].filter(t => !GENERIC.has(t)));
   return jaccard(distinct(a), distinct(b)) >= 0.5;
 }

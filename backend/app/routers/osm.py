@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.schemas.osm import OsmNearbyResponse
 from app.services.osm_service import OsmNearbyService, OsmUnavailable, get_osm_service
-from app.dependencies import get_current_admin
+from app.dependencies import get_current_admin, get_current_user
 from app.services.osm_snapshot_store import SnapshotStoreError
 import asyncio
 
@@ -21,7 +21,7 @@ async def sync_status(service:OsmNearbyService=Depends(get_osm_service)):
         raise HTTPException(503,'Durable OSM status unavailable') from None
 
 
-@router.get("/nearby", response_model=OsmNearbyResponse, response_model_exclude_none=True)
+@router.get("/nearby", response_model=OsmNearbyResponse, response_model_exclude_none=True, dependencies=[Depends(get_current_user)])
 async def osm_nearby(
     latitude: float = Query(ge=-90, le=90, allow_inf_nan=False),
     longitude: float = Query(ge=-180, le=180, allow_inf_nan=False),

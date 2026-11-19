@@ -9,6 +9,7 @@ import uuid
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
@@ -17,7 +18,7 @@ from app.database import get_db
 from app.schemas.user import LoginRequest, LoginResponse, RefreshRequest
 from app.services.user_service import get_user_by_email, get_user_by_id, verify_password
 from app.services.user_service import _password_hash
-from app.services.login_throttle import consume_login_attempt
+from app.services import login_throttle
 from app.models.auth_session import RefreshSession
 
 MAX_SESSIONS_PER_USER = 10
@@ -60,21 +61,45 @@ def _decode_refresh(token):
         raise HTTPException(401, 'Invalid refresh token') from exc
 
 
+def _rejection(rejected: login_throttle.LoginRejected) -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        content={"detail": rejected.detail, "code": rejected.code, "retry_after": rejected.retry_after},
+        headers={"Retry-After": str(rejected.retry_after)},
+    )
+
+
 # ─── Endpoints ────────────────────────────────────────────────────────────────
 
 @router.post("/login", response_model=LoginResponse)
 def login(login_data: LoginRequest, request: Request, db: Session = Depends(get_db)):
     """Authenticate with email + password and receive access & refresh tokens."""
-    consume_login_attempt(db, login_data.email, request.client.host if request.client else 'unknown')
+    try:
+        login_throttle.consume_ip_attempt(db, request.client.host if request.client else 'unknown')
+    except login_throttle.LoginRejected as rejected:
+        return _rejection(rejected)
+    rejected = None
+    attempt = 0
+    try:
+        attempt = login_throttle.reserve_login_attempt(db, login_data.email)
+    except login_throttle.LoginRejected as exc:
+        rejected = exc
     user = get_user_by_email(db, login_data.email)
-    # Always run the same expensive password verifier, including unknown accounts.
+    # Always run the same expensive password verifier, including unknown accounts and locked ones.
     valid_password = verify_password(login_data.password, user.password_hash if user else _DUMMY_HASH)
+    if rejected:
+        return _rejection(rejected)
 
     if not user or not valid_password:
+        login_throttle.record_failed_login(db, login_data.email, attempt)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
         )
+    login_throttle.release_login_attempt(db, login_data.email)
+    locked_for = login_throttle.lock_retry_after(db, login_data.email)
+    if locked_for:
+        return _rejection(login_throttle.LoginRejected('login_locked', login_throttle.LOCK_MESSAGE, locked_for))
 
     session_id = str(uuid.uuid4())
     token, digest = _refresh_pair(user.id, session_id)

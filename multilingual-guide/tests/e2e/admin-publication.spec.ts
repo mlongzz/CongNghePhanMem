@@ -1,7 +1,11 @@
 import { test, expect } from '@playwright/test';
+import { GUEST_STATE, viewerHeaders } from './auth';
+
+test.use({ storageState: GUEST_STATE });
 
 // All mutations use the isolated SQLite backend created by run-e2e.cjs.
 test('admin creates a draft, publishes, archives and restores without losing its record', async ({ page, request }) => {
+  const readHeaders = await viewerHeaders(request);
   const name = `Publication Browser Fixture ${Date.now()}`;
   await page.goto('/login');
   await page.getByLabel('Địa chỉ email', { exact: true }).fill('admin@e2e.example.com');
@@ -15,7 +19,7 @@ test('admin creates a draft, publishes, archives and restores without losing its
   await page.getByLabel('Kinh độ (-180…180)', { exact: true }).fill('106.6993');
   await page.getByRole('button', { name: 'Lưu thay đổi', exact: true }).click();
   await expect(page.getByText('Đã lưu bản nháp. Kiểm duyệt rồi xuất bản từ danh sách.', { exact: true })).toBeVisible();
-  const publicPlaces = async () => (await request.get('http://127.0.0.1:8765/places?limit=100')).json() as Promise<{ id: number; name: string }[]>;
+  const publicPlaces = async () => (await request.get('http://127.0.0.1:8765/places?limit=100', { headers: readHeaders })).json() as Promise<{ id: number; name: string }[]>;
   expect((await publicPlaces()).some(row => row.name === name)).toBe(false);
   const row = page.getByText(name, { exact: true }).locator('..');
   await expect(row.getByText('Bản nháp', { exact: true })).toBeVisible();
@@ -27,31 +31,32 @@ test('admin creates a draft, publishes, archives and restores without losing its
   await expect(page.getByRole('radio', { name: 'Đã xuất bản', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Lưu thay đổi', exact: true }).click();
   await expect(page.getByText('Không có thay đổi. Trạng thái xuất bản được giữ nguyên.', { exact: true })).toBeVisible();
-  expect((await request.get(`http://127.0.0.1:8765/places/${published.id}`)).status()).toBe(200);
+  expect((await request.get(`http://127.0.0.1:8765/places/${published.id}`, { headers: readHeaders })).status()).toBe(200);
   await row.getByRole('button', { name: 'Sửa', exact: true }).click();
   await page.getByLabel('Mô tả', { exact: true }).fill('Updated content must be reviewed before publishing.');
   await page.getByRole('button', { name: 'Lưu thay đổi', exact: true }).click();
   await expect(page.getByText(/Lưu nội dung này sẽ gỡ bản đang công khai/)).toBeVisible();
-  expect((await request.get(`http://127.0.0.1:8765/places/${published.id}`)).status()).toBe(200);
+  expect((await request.get(`http://127.0.0.1:8765/places/${published.id}`, { headers: readHeaders })).status()).toBe(200);
   await page.getByRole('button', { name: 'Hủy', exact: true }).last().click();
-  expect((await request.get(`http://127.0.0.1:8765/places/${published.id}`)).status()).toBe(200);
+  expect((await request.get(`http://127.0.0.1:8765/places/${published.id}`, { headers: readHeaders })).status()).toBe(200);
   await page.getByRole('button', { name: 'Lưu thay đổi', exact: true }).click();
   await page.getByRole('button', { name: 'Xác nhận', exact: true }).click();
-  await expect.poll(async () => (await request.get(`http://127.0.0.1:8765/places/${published.id}`)).status()).toBe(404);
+  await expect.poll(async () => (await request.get(`http://127.0.0.1:8765/places/${published.id}`, { headers: readHeaders })).status()).toBe(404);
   await row.getByRole('button', { name: 'Xuất bản', exact: true }).click();
   await page.getByRole('button', { name: 'Xác nhận', exact: true }).click();
-  await expect.poll(async () => (await request.get(`http://127.0.0.1:8765/places/${published.id}`)).status()).toBe(200);
+  await expect.poll(async () => (await request.get(`http://127.0.0.1:8765/places/${published.id}`, { headers: readHeaders })).status()).toBe(200);
   await row.getByRole('button', { name: 'Lưu trữ', exact: true }).click();
   await page.getByRole('button', { name: 'Xác nhận', exact: true }).click();
-  await expect.poll(async () => (await request.get(`http://127.0.0.1:8765/places/${published.id}`)).status()).toBe(404);
+  await expect.poll(async () => (await request.get(`http://127.0.0.1:8765/places/${published.id}`, { headers: readHeaders })).status()).toBe(404);
   await page.getByRole('checkbox', { name: 'Hiện địa điểm đã lưu trữ' }).click();
   await row.getByRole('button', { name: 'Khôi phục bản nháp', exact: true }).click();
   await page.getByRole('button', { name: 'Xác nhận', exact: true }).click();
   await expect(row.getByText('Bản nháp', { exact: true })).toBeVisible();
-  expect((await request.get(`http://127.0.0.1:8765/places/${published.id}`)).status()).toBe(404);
+  expect((await request.get(`http://127.0.0.1:8765/places/${published.id}`, { headers: readHeaders })).status()).toBe(404);
 });
 
 test('OSM import requires a reviewed preview and saves unpublished drafts idempotently', async ({ page, request }) => {
+  const readHeaders = await viewerHeaders(request);
   await page.goto('/login');
   await page.getByLabel('Địa chỉ email', { exact: true }).fill('admin@e2e.example.com');
   await page.getByLabel('Mật khẩu', { exact: true }).fill('TestPassword123!');
@@ -64,13 +69,14 @@ test('OSM import requires a reviewed preview and saves unpublished drafts idempo
   await expect(page.getByText('OSM Browser Import Fixture', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Xác nhận nhập bản nháp đã xem trước', exact: true }).click();
   await expect(page.getByText('Đã nhập bản nháp. Mở Địa điểm POI để kiểm duyệt và xuất bản.', { exact: true })).toBeVisible();
-  const publicRows = await (await request.get('http://127.0.0.1:8765/places?limit=100')).json();
+  const publicRows = await (await request.get('http://127.0.0.1:8765/places?limit=100', { headers: readHeaders })).json();
   expect(publicRows.some((row: { name: string }) => row.name === fixture.places[0].name)).toBe(false);
   await page.getByRole('button', { name: 'Xem trước OSM', exact: true }).click();
   await expect(page.getByText('Đã có sẵn', { exact: true })).toBeVisible();
 });
 
 test('reviewed Wikipedia discovery excludes conflicts and imports only selected unpublished drafts', async ({ page, request }) => {
+  const readHeaders = await viewerHeaders(request);
   const api = 'http://127.0.0.1:8765';
   const login = await request.post(`${api}/auth/login`, { data: { email: 'admin@e2e.example.com', password: 'TestPassword123!' } });
   const { access_token } = await login.json();
@@ -102,7 +108,7 @@ test('reviewed Wikipedia discovery excludes conflicts and imports only selected 
   await expect(apply).toBeEnabled();
   await apply.click();
   await expect(page.getByText('Đã nhập bản nháp. Mở Địa điểm POI để kiểm duyệt và xuất bản.', { exact: true })).toBeVisible();
-  const publicRows = await (await request.get(`${api}/places?limit=100`)).json() as { name: string }[];
+  const publicRows = await (await request.get(`${api}/places?limit=100`, { headers: readHeaders })).json() as { name: string }[];
   expect(publicRows.some(row => selected.rows.some(source => source.name === row.name))).toBe(false);
   const adminRows = await (await request.get(`${api}/admin/places?page_size=100`, { headers })).json() as { items: { source: string; source_id: string; publication_status: string }[] };
   const imported = adminRows.items.filter(row => selected.rows.some(source => source.source_id === row.source_id));

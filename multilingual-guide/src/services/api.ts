@@ -22,10 +22,42 @@ export const API_BASE_URL = configured ? resolveApiBase(configured) : "";
 export type LoginResponse = { access_token: string; refresh_token: string; token_type?: string };
 
 export class ApiError extends Error {
-  constructor(message: string, public status: number) { super(message); }
+  constructor(
+    message: string,
+    public status: number,
+    public code?: string,
+    public retryAfter?: number,
+    public fields?: Record<string, string>,
+  ) { super(message); }
 }
 let recoverSession: ((token: string) => Promise<string | null>) | null = null;
 export function setSessionRecovery(handler: typeof recoverSession) { recoverSession = handler; }
+let tokenProvider: (() => string | null) | null = null;
+export function setTokenProvider(provider: typeof tokenProvider) { tokenProvider = provider; }
+export function getAccountToken(): string | null { return tokenProvider?.() ?? null; }
+function isApiUrl(url: string): boolean { return Boolean(API_BASE_URL) && url.startsWith(`${API_BASE_URL}/`); }
+export async function fetchWithAccount(url: string, init: RequestInit & { headers?: Record<string, string> }): Promise<Response> {
+  if (!isApiUrl(url)) return fetch(url, init);
+  const send = (token: string | null) => fetch(url, { ...init, headers: { ...init.headers, ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
+  const used = getAccountToken();
+  const response = await send(used);
+  if (response.status !== 401 || !used || !recoverSession) return response;
+  const next = await recoverSession(used);
+  return next ? send(next) : response;
+}
+
+function sendsAccountToken(path: string, method?: string): boolean {
+  if (!path.startsWith('/') || path.startsWith('//')) return false;
+  if (/^\/(auth\/|health|media\/|openapi\.json)/.test(path)) return false;
+  return !(path === '/users' && method?.toUpperCase() === 'POST');
+}
+
+const FIELD_MESSAGES: Record<string, string> = {
+  email: "Địa chỉ email không hợp lệ. Hãy kiểm tra lại (ví dụ: ten@gmail.com).",
+  password: "Mật khẩu cần 8–128 ký tự, có chữ thường, chữ hoa và chữ số.",
+  full_name: "Vui lòng nhập họ tên hợp lệ.",
+  name: "Vui lòng nhập họ tên hợp lệ.",
+};
 
 export function buildRequestHeaders(body: unknown, token?: string, extra?: HeadersInit): Record<string, string> {
   return {
@@ -41,7 +73,8 @@ export async function apiFetch<T>(
 ): Promise<T> {
   if (!API_BASE_URL)
     throw new Error("Dịch vụ hiện chưa sẵn sàng. Vui lòng thử lại sau.");
-  const { token, headers, timeoutMs, ...init } = options ?? {};
+  const { token: explicitToken, headers, timeoutMs, ...init } = options ?? {};
+  const token = (path.startsWith('/') && !path.startsWith('//') ? explicitToken : undefined) ?? (sendsAccountToken(path, init.method) ? tokenProvider?.() ?? undefined : undefined);
   if (init.signal?.aborted) { const error = new Error('Đã hủy yêu cầu.'); error.name = 'AbortError'; throw error; }
   const controller = new AbortController();
   const cancel = () => controller.abort();
@@ -49,7 +82,7 @@ export async function apiFetch<T>(
   const configuredTimeout = timeoutMs ?? Number(process.env.EXPO_PUBLIC_API_TIMEOUT_MS || '12000');
   const timeout = setTimeout(() => controller.abort(), Number.isFinite(configuredTimeout) ? Math.max(1000, Math.min(120000, configuredTimeout)) : 12000);
   try {
-    const response = await fetch(`${API_BASE_URL}${path}`, {
+    const response = await fetch(/^[a-z][a-z0-9+.-]*:|^\/\//i.test(path) ? path : `${API_BASE_URL}${path}`, {
       ...init,
       signal: controller.signal,
       headers: buildRequestHeaders(init.body, token, headers),
@@ -71,6 +104,17 @@ export async function apiFetch<T>(
         value && typeof value === "object" && "detail" in value
           ? (value as { detail: unknown }).detail
           : null;
+      const fields: Record<string, string> = {};
+      if (Array.isArray(detail)) for (const e of detail) {
+        const field = Array.isArray(e?.loc) ? String(e.loc[e.loc.length - 1] ?? "") : "";
+        const msg = typeof e?.msg === "string" ? e.msg : "";
+        const key = field === "name" ? "full_name" : /email address/i.test(msg) ? "email" : field;
+        if (FIELD_MESSAGES[key] && !fields[key]) fields[key] = FIELD_MESSAGES[key];
+      }
+      const body = value && typeof value === "object" ? value as { code?: unknown; retry_after?: unknown } : {};
+      const code = typeof body.code === "string" ? body.code : undefined;
+      const headerWait = Number(response.headers?.get?.("Retry-After"));
+      const retryAfter = typeof body.retry_after === "number" && Number.isFinite(body.retry_after) ? body.retry_after : Number.isFinite(headerWait) && headerWait > 0 ? headerWait : undefined;
       const message =
         typeof detail === "string"
           ? detail
@@ -79,9 +123,9 @@ export async function apiFetch<T>(
                 .map((e) => {
                   const field = Array.isArray(e?.loc) ? String(e.loc[e.loc.length - 1] ?? "") : "";
                   const msg = typeof e?.msg === "string" ? e.msg : "";
-                  if (field === "email" || /email address/i.test(msg)) return "Địa chỉ email không hợp lệ. Hãy kiểm tra lại (ví dụ: ten@gmail.com).";
-                  if (field === "password") return "Mật khẩu chưa đáp ứng yêu cầu (8–128 ký tự).";
-                  if (field === "full_name" || field === "name") return "Vui lòng nhập họ tên hợp lệ.";
+                  if (field === "email" || /email address/i.test(msg)) return FIELD_MESSAGES.email;
+                  if (field === "password") return FIELD_MESSAGES.password;
+                  if (field === "full_name" || field === "name") return FIELD_MESSAGES.full_name;
                   return msg && !/[A-Za-z]{4,}/.test(msg) ? msg : "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại các trường đã nhập.";
                 })
                 .filter((m, i, all) => all.indexOf(m) === i)
@@ -89,6 +133,7 @@ export async function apiFetch<T>(
             : `HTTP ${response.status}`;
       const friendly: Record<string, string> = {
         "Invalid email or password": "Email hoặc mật khẩu không đúng.",
+        "Account temporarily locked after too many failed attempts.": "Tài khoản tạm khóa do nhập sai nhiều lần. Thử lại sau",
         "Too many login attempts. Try again later.": "Bạn đã thử đăng nhập quá nhiều lần. Vui lòng chờ vài phút rồi thử lại.",
         "Email already registered": "Email này đã được đăng ký.",
         "Token has expired": "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.",
@@ -105,17 +150,17 @@ export async function apiFetch<T>(
         "Could not connect to source API; check server DNS and network or upload a licensed image manually; no draft saved": "Không kết nối được nguồn ảnh. Kiểm tra DNS và mạng máy chủ hoặc tải ảnh có giấy phép lên thủ công. Chưa lưu dữ liệu.",
       };
       const providerHttp = /^Source API returned HTTP (\d{3});/.exec(message);
-      throw new ApiError(friendly[message] ?? (providerHttp ? `Nguồn ảnh trả HTTP ${providerHttp[1]}. Nhà cung cấp từ chối hoặc giới hạn yêu cầu; thử lại sau hoặc tải ảnh có giấy phép lên thủ công. Chưa lưu dữ liệu.` : response.status >= 500 ? "Dịch vụ đang gặp sự cố. Vui lòng thử lại sau." : message), response.status);
+      throw new ApiError(friendly[message] ?? (providerHttp ? `Nguồn ảnh trả HTTP ${providerHttp[1]}. Nhà cung cấp từ chối hoặc giới hạn yêu cầu; thử lại sau hoặc tải ảnh có giấy phép lên thủ công. Chưa lưu dữ liệu.` : response.status >= 500 ? "Dịch vụ đang gặp sự cố. Vui lòng thử lại sau." : message), response.status, code, retryAfter, Object.keys(fields).length ? fields : undefined);
     }
     return value as T;
   } catch (e) {
     if (e instanceof Error && e.name === "AbortError") {
       if (init.signal?.aborted) { const error = new Error('Đã hủy yêu cầu.'); error.name = 'AbortError'; throw error; }
-      throw new Error("Máy chủ phản hồi quá thời gian chờ và có thể đang khởi động. Vui lòng thử lại.");
+      throw new ApiError("Máy chủ phản hồi quá thời gian chờ và có thể đang khởi động. Vui lòng thử lại.", 0, "timeout");
     }
     if (e instanceof TypeError)
-      throw new Error(
-        "Không thể kết nối máy chủ. Vui lòng kiểm tra mạng và thử lại.",
+      throw new ApiError(
+        "Không thể kết nối máy chủ. Vui lòng kiểm tra mạng và thử lại.", 0, "network",
       );
     throw e;
   } finally {

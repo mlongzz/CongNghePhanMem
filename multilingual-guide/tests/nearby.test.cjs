@@ -12,7 +12,7 @@ function service({ fetch, api = 'http://backend.invalid', apiFetch, Date: clock 
   const exports = {}; const delays = [];
   const source = ts.transpileModule(fs.readFileSync('src/services/nearby.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   vm.runInNewContext(source, {
-    exports, require: () => ({ API_BASE_URL: api, apiFetch }), fetch, AbortController, Error, TypeError, URL, URLSearchParams, Date: clock,
+    exports, require: () => ({ API_BASE_URL: api, apiFetch, fetchWithAccount: (url, init) => fetch(url, init) }), fetch, AbortController, Error, TypeError, URL, URLSearchParams, Date: clock,
     setTimeout: (fn, ms) => { delays.push(ms); return setTimeout(fn, timers ? Math.min(ms, 5) : ms); }, clearTimeout,
   });
   return { ...exports, delays };

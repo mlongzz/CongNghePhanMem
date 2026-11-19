@@ -21,6 +21,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import ALLOWED_ORIGINS, LAN_ORIGIN_REGEX
 from app.database import get_db
+from app.dependencies import get_current_user
 from app.models import admin, audio_session, favorite, guide_content, history, place, review, user  # noqa: F401
 from app.routers import auth, users
 from app.routers.admin import router as admin_router
@@ -140,7 +141,7 @@ def root():
     return {"status": "ok", "message": "Multilingual Guide API is running", "version": "2.0.0"}
 
 
-@app.get("/settings", tags=["Configuration"])
+@app.get("/settings", tags=["Configuration"], dependencies=[Depends(get_current_user)])
 def public_settings(db: Session = Depends(get_db)):
     from app.routers.admin import read_settings
     return read_settings(db)
