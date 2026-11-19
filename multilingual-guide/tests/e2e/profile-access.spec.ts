@@ -1,4 +1,7 @@
 import { test, expect } from '@playwright/test';
+import { GUEST_STATE, VIEWER_EMAIL, VIEWER_PASSWORD, loginApi, seedTokens } from './auth';
+
+test.use({ storageState: GUEST_STATE });
 
 declare global {
   interface Window { mapTestUrl: string; mapTestMessage: string }
@@ -38,7 +41,8 @@ test('account and admin show their stored role and checked permission; selectors
   await expect(page.getByText(/Vai trò tài khoản: Quản trị viên · Quyền quản trị khi đăng nhập: Có/)).toBeVisible();
 });
 
-test('directions use only the selected coordinates and report a blocked popup', async ({ page }) => {
+test('directions use only the selected coordinates and report a blocked popup', async ({ page, context, request }) => {
+  await seedTokens(context, await loginApi(request, VIEWER_EMAIL, VIEWER_PASSWORD));
   await page.goto('/place/db-1');
   await expect(page.getByText('Browser Test Museum', { exact: true })).toBeVisible();
   await page.evaluate(() => {

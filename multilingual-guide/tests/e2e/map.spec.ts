@@ -30,7 +30,7 @@ test('the real FastAPI endpoints render both ID namespaces and the browser never
   page.on('request', request => {
     if (request.url().includes('/osm/nearby?')) {
       osmRequests.push(request.url());
-      expect(request.headers()['authorization']).toBeUndefined();
+      expect(request.headers()['authorization']).toMatch(/^Bearer /);
     }
   });
   await locate(page);

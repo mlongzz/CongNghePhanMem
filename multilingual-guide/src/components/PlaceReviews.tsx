@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link } from 'expo-router';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { apiFetch } from '../services/api';
@@ -57,6 +56,6 @@ export default function PlaceReviews({ placeId }: { placeId: number }) {
       <PrimaryButton title={mine ? 'Cập nhật đánh giá' : 'Gửi đánh giá'} loading={saving} disabled={busy} onPress={() => void save()} />
       {!!mine && <PrimaryButton title="Xóa đánh giá của tôi" disabled={busy || saving} variant="outline" onPress={() => setConfirm(!confirm)} />}
       {confirm && <><Text>{t('Xác nhận xóa đánh giá này?')}</Text><PrimaryButton title="Xác nhận xóa" disabled={saving} onPress={() => void save(true)} /></>}
-    </View> : <Link href="/login" style={{ color: C.primaryDark, padding: 12 }}>{t('Đăng nhập để viết đánh giá →')}</Link>}
+    </View> : null}
   </View>;
 }

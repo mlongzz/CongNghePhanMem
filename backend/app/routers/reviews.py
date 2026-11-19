@@ -36,7 +36,7 @@ def _require_place(place_id: int, db: Session) -> None:
 
 # ─── Rating summary ───────────────────────────────────────────────────────────
 
-@router.get("/{place_id}/google-reviews")
+@router.get("/{place_id}/google-reviews", dependencies=[Depends(get_current_user)])
 def get_google_reviews(place_id: int, language: str = Query("vi", pattern="^(vi|en|fr|ja)$"), db: Session = Depends(get_db)):
     """Google Maps rating and recent reviews (Places API), with attribution and a link back to Google Maps."""
     place = get_place_by_id(db, place_id)
@@ -45,7 +45,7 @@ def get_google_reviews(place_id: int, language: str = Query("vi", pattern="^(vi|
     return google_reviews(place.id, place.name, place.address, place.latitude, place.longitude, language)
 
 
-@router.get("/{place_id}/reviews/summary", response_model=PlaceRatingSummary)
+@router.get("/{place_id}/reviews/summary", response_model=PlaceRatingSummary, dependencies=[Depends(get_current_user)])
 def get_rating_summary(place_id: int, db: Session = Depends(get_db)):
     """Return average rating and review count for a place."""
     _require_place(place_id, db)
@@ -59,7 +59,7 @@ def get_my_review(place_id: int, db: Session = Depends(get_db), current_user: Us
     _require_place(place_id, db)
     return get_review(db, current_user.id, place_id)
 
-@router.get("/{place_id}/reviews", response_model=list[ReviewResponse])
+@router.get("/{place_id}/reviews", response_model=list[ReviewResponse], dependencies=[Depends(get_current_user)])
 def list_place_reviews(
     place_id: int,
     limit: int = Query(default=20, ge=1, le=100),

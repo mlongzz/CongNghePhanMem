@@ -12,20 +12,22 @@ import { AppState as NativeAppState, Platform } from "react-native";
 import * as Speech from "expo-speech";
 import { LANGS, type Language, type Place, type NarrationContent } from "../data/places";
 import { type Coordinates, fetchNearbyPlaces, validateBackendPlace } from "../services/nearby";
-import { getSessionToken, writeSessionToken, getRefreshToken, writeRefreshToken } from "../services/session";
-import { apiFetch, checkAdmin, getUserProfile, refreshTokens, revokeSession, ApiError, setSessionRecovery, type UserResponse } from "../services/api";
+import { getSessionToken, writeSessionToken, getRefreshToken, writeRefreshToken, withRefreshLock, subscribeSessionStorage } from "../services/session";
+import { apiFetch, checkAdmin, getUserProfile, refreshTokens, revokeSession, ApiError, setSessionRecovery, setTokenProvider, type UserResponse } from "../services/api";
 import { createSpeechPlayer, createWebSpeechDriver, type PlayerState } from "../services/speechPlayer";
 import { resolveNarration, NO_NARRATION } from "../services/narration";
 import { validateDiscoveredPlace, parseDiscoveredPlaces, serializeDiscoveredPlaces } from "../services/placeRegistry";
 import { getCurrentCoordinates, type LocationCoordinates } from "../services/location";
 
-import { restoreOutcome, refreshAndPersist, SESSION_UNVERIFIED_NOTICE } from '../services/sessionRestore';
+import { restoreOutcome, refreshAndPersist, classifyStorageChange, SESSION_UNVERIFIED_NOTICE } from '../services/sessionRestore';
 import { isCatalogFresh } from '../services/catalogCache';
 import { isSystemFavorite, mergeGuestFavorites } from '../services/favoriteMerge';
 import { LANGUAGE_STORAGE_KEY } from '../hooks/useStoredLanguage';
 import { freshGps } from '../services/discoveryStatus';
 import { acceptGpsFix } from '../services/gpsTracking';
 
+// The provider can remount during route changes on web; how the session ended must survive that.
+const exitState = { expired: false, signedOut: false };
 const STORE_FAVORITES = "mg_favorites_v2";
 const STORE_LANG = LANGUAGE_STORAGE_KEY;
 const STORE_DRAFTS = "mg_guide_drafts_v3";
@@ -59,6 +61,9 @@ type AppState = {
   updateProfile: (profile: UserResponse) => void;
   authLoading: boolean;
   logout: () => void;
+  signOut: () => void;
+  signedOutByUser: boolean;
+  sessionExpired: boolean;
   sessionNotice: string;
   sessionUnverified: boolean;
   retrySession: () => void;
@@ -140,10 +145,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserResponse | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [sessionNotice, setSessionNotice] = useState('');
+  const [sessionExpired, saveSessionExpired] = useState(() => exitState.expired);
+  const [signedOutByUser, saveSignedOutByUser] = useState(() => exitState.signedOut);
+  const setSessionExpired = useCallback((value: boolean) => { exitState.expired = value; saveSessionExpired(value); }, []);
+  const setSignedOutByUser = useCallback((value: boolean) => { exitState.signedOut = value; saveSignedOutByUser(value); }, []);
   const [sessionUnverified, setSessionUnverified] = useState(false);
   const speechSeq = useRef(0);
   const authSeq = useRef(0);
   const tokenRef = useRef<string | null>(null);
+  useEffect(() => { setTokenProvider(() => tokenRef.current); return () => setTokenProvider(null); }, []);
   const refreshRef = useRef<string | null>(null);
   const recovery = useRef<Promise<string | null> | null>(null);
   const rotateTokens = useCallback(async (refresh: string) => {
@@ -151,8 +161,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     refreshRef.current = result.refresh_token;
     return result;
   }, []);
-  const logout = useCallback(() => {
-    const refresh = refreshRef.current;
+  const logout = useCallback((options?: { revoke?: boolean; keepStorage?: boolean }) => {
+    const refresh = options?.revoke === false ? null : refreshRef.current;
     refreshRef.current = null;
     setSessionNotice(''); setSessionUnverified(false);
     speechSeq.current++;
@@ -162,12 +172,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     authSeq.current++;
     tokenRef.current = null;
     saveToken(null); saveAccountFavorites([]); setFavoritesLoading(false); setFavoriteError(""); setUser(null); setAdminToken(null); setAuthLoading(false);
-    void Promise.all([writeSessionToken(null), writeRefreshToken(null)]).catch(() => {});
+    if (!options?.keepStorage) void Promise.all([writeSessionToken(null), writeRefreshToken(null)]).catch(() => {});
     if (refresh) void revokeSession(refresh).catch(e => {
       if (!(e instanceof ApiError && e.status === 401)) setSessionNotice('Đã đăng xuất trên thiết bị. Chưa thu hồi được phiên trên máy chủ do lỗi kết nối.');
     });
   }, []);
-  const loginWithTokens = useCallback(async (access: string, refresh: string, keepLoading = false) => {
+  const expire = useCallback(() => { logout(); setSessionExpired(true); }, [logout, setSessionExpired]);
+  const signOut = useCallback(() => { setSignedOutByUser(true); logout(); }, [logout, setSignedOutByUser]);
+  const loginWithTokens = useCallback(async (access: string, refresh: string, options: { keepLoading?: boolean; persist?: boolean } = {}) => {
+    const { keepLoading = false, persist = true } = options;
     const seq = ++authSeq.current;
     setAuthLoading(true);
     try {
@@ -177,42 +190,61 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         throw e;
       });
       if (seq !== authSeq.current) return;
-      await Promise.all([writeSessionToken(access), writeRefreshToken(refresh || null)]);
+      if (!persist && (await getSessionToken()) !== access) return;
       if (seq !== authSeq.current) return;
-      if (!tokenRef.current && LANGS.some(l => l.key === profile.language)) {
+      if (persist) {
+        await Promise.all([writeSessionToken(access), writeRefreshToken(refresh || null)]);
+        if (seq !== authSeq.current) return;
+      }
+      const storedLanguage = keepLoading ? await AsyncStorage.getItem(STORE_LANG).catch(() => null) : null;
+      if (!tokenRef.current && !LANGS.some(l => l.key === storedLanguage) && LANGS.some(l => l.key === profile.language)) {
         saveLanguage(profile.language as Language);
         void AsyncStorage.setItem(STORE_LANG, profile.language).catch(() => {});
       }
       tokenRef.current = access;
       refreshRef.current = refresh || null;
-      setSessionNotice(''); setSessionUnverified(false);
+      setSessionNotice(''); setSessionUnverified(false); setSessionExpired(false); setSignedOutByUser(false);
       saveToken(access); setUser(profile); setAdminToken(admin.enabled ? access : null);
     } finally { if (seq === authSeq.current && !keepLoading) setAuthLoading(false); }
-  }, []);
+  }, [setSessionExpired, setSignedOutByUser]);
   useEffect(() => {
     setSessionRecovery(async failed => {
       if (!tokenRef.current) return null;
       if (failed !== tokenRef.current) return tokenRef.current;
       if (!recovery.current) {
         const seq = authSeq.current;
-        recovery.current = (async () => {
+        const adopt = async (access: string, refresh: string) => {
+          if (seq !== authSeq.current) return null;
+          await loginWithTokens(access, refresh, { persist: false });
+          return tokenRef.current;
+        };
+        recovery.current = withRefreshLock(async () => {
           try {
+            const storedAccess = await getSessionToken();
+            if (storedAccess && storedAccess !== failed) return await adopt(storedAccess, (await getRefreshToken()) ?? '');
             const refresh = await getRefreshToken();
-            if (!refresh) { logout(); return null; }
-            const result = await rotateTokens(refresh);
-            if (seq !== authSeq.current) return null;
-            await loginWithTokens(result.access_token, result.refresh_token);
-            return tokenRef.current;
+            if (!refresh) { expire(); return null; }
+            let result;
+            try { result = await rotateTokens(refresh); }
+            catch (e) {
+              if (e instanceof ApiError && e.status === 401) {
+                const newerAccess = await getSessionToken();
+                const newerRefresh = await getRefreshToken();
+                if (newerAccess && newerRefresh && newerRefresh !== refresh) return await adopt(newerAccess, newerRefresh);
+              }
+              throw e;
+            }
+            return await adopt(result.access_token, result.refresh_token);
           } catch (e) {
-            if (e instanceof ApiError && e.status === 401) logout();
+            if (e instanceof ApiError && e.status === 401) expire();
             throw e;
           } finally { recovery.current = null; }
-        })();
+        });
       }
       return recovery.current;
     });
     return () => setSessionRecovery(null);
-  }, [loginWithTokens, logout, rotateTokens]);
+  }, [expire, loginWithTokens, logout, rotateTokens]);
   const restoreRunning = useRef(false);
   const restoreSession = useCallback(async () => {
     if (restoreRunning.current || tokenRef.current) return;
@@ -221,21 +253,53 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const access = await getSessionToken();
       if (access) {
         const refresh = (await getRefreshToken()) ?? '';
-        try { await loginWithTokens(access, refresh, true); }
+        try { await loginWithTokens(access, refresh, { keepLoading: true, persist: false }); }
         catch (e) {
           if (!(e instanceof ApiError) || e.status !== 401 || !refresh) throw e;
-          const result = await rotateTokens(refresh);
-          await loginWithTokens(result.access_token, result.refresh_token, true);
+          const next = await withRefreshLock(async () => {
+            const storedAccess = await getSessionToken();
+            const storedRefresh = await getRefreshToken();
+            if (!storedAccess && !storedRefresh) return null;
+            if (storedAccess && storedRefresh && storedAccess !== access) return { access: storedAccess, refresh: storedRefresh };
+            const result = await rotateTokens(storedRefresh ?? refresh);
+            return { access: result.access_token, refresh: result.refresh_token };
+          });
+          if (next) await loginWithTokens(next.access, next.refresh, { keepLoading: true, persist: false });
         }
       }
       setSessionUnverified(false);
     } catch (e) {
-      if (restoreOutcome(e) === 'expired') logout();
+      if (restoreOutcome(e) === 'expired') expire();
       else { setSessionUnverified(true); setSessionNotice(SESSION_UNVERIFIED_NOTICE); }
     } finally { restoreRunning.current = false; setAuthLoading(false); }
-  }, [loginWithTokens, logout, rotateTokens]);
+  }, [expire, loginWithTokens, rotateTokens]);
   useEffect(() => { void Promise.resolve().then(restoreSession); }, [restoreSession]);
   const retrySession = useCallback(() => { setAuthLoading(true); void restoreSession(); }, [restoreSession]);
+  useEffect(() => subscribeSessionStorage(() => {
+    void (async () => {
+      const [access, refresh] = await Promise.all([getSessionToken(), getRefreshToken()]);
+      const change = classifyStorageChange(tokenRef.current, access, refresh);
+      if (change.kind === 'ignore' && access && access === tokenRef.current && refresh) refreshRef.current = refresh;
+      else if (change.kind === 'signed-out') { setSignedOutByUser(true); logout({ revoke: false, keepStorage: true }); }
+      else if (change.kind === 'rotated') {
+        tokenRef.current = change.access;
+        refreshRef.current = change.refresh || null;
+        saveToken(change.access);
+        setAdminToken(current => current ? change.access : null);
+      } else if (change.kind === 'switched') {
+        setSignedOutByUser(false);
+        if (!access) return;
+        if (tokenRef.current) {
+          speechSeq.current++;
+          speechRequest.current?.abort();
+          player.current?.stop();
+          setPlayingId(null); setSpeechStatus('idle');
+          saveAccountFavorites([]);
+        }
+        void loginWithTokens(access, refresh ?? '', { persist: false }).catch(() => logout({ revoke: false, keepStorage: true }));
+      }
+    })();
+  }), [logout, loginWithTokens, setSignedOutByUser]);
   useEffect(() => {
     if (!sessionUnverified) return;
     const retry = () => { void restoreSession(); };
@@ -248,12 +312,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let mounted = true;
     void (async () => {
-      const [saved, lang, guideDrafts, settings] =
+      const [saved, lang, guideDrafts] =
         await Promise.allSettled([
           AsyncStorage.getItem(STORE_FAVORITES),
           AsyncStorage.getItem(STORE_LANG),
           AsyncStorage.getItem(STORE_DRAFTS),
-          apiFetch<{ default_language: string; nearby_radius_km: number }>("/settings"),
         ]);
       if (!mounted) return;
       try {
@@ -267,16 +330,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           LANGS.some((l) => l.key === lang.value)
         )
           saveLanguage(lang.value as Language);
-        if (settings.status === "fulfilled" && settings.value && typeof settings.value === "object") {
-          const defaultRadius = settings.value.nearby_radius_km;
-          if (!radiusWasChosen.current && typeof defaultRadius === "number" && Number.isFinite(defaultRadius) && defaultRadius >= 1 && defaultRadius <= 20) {
-            currentRadius.current = defaultRadius;
-            saveRadiusKm(defaultRadius);
-          }
-          if (!tokenRef.current && !(lang.status === "fulfilled" && lang.value) && LANGS.some(l => l.key === settings.value.default_language))
-            saveLanguage(settings.value.default_language as Language);
-        }
-
         if (guideDrafts.status === "fulfilled" && guideDrafts.value)
           setDrafts(JSON.parse(guideDrafts.value));
       } catch {
@@ -287,8 +340,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       mounted = false;
     };
   }, []);
+  useEffect(() => {
+    if (!token) return;
+    let mounted = true;
+    void apiFetch<{ default_language: string; nearby_radius_km: number }>("/settings", { token }).then(settings => {
+      if (!mounted || !settings || typeof settings !== "object") return;
+      const defaultRadius = settings.nearby_radius_km;
+      if (!radiusWasChosen.current && typeof defaultRadius === "number" && Number.isFinite(defaultRadius) && defaultRadius >= 1 && defaultRadius <= 20) {
+        currentRadius.current = defaultRadius;
+        saveRadiusKm(defaultRadius);
+      }
+    }).catch(() => { /* settings are optional */ });
+    return () => { mounted = false; };
+  }, [token]);
   const catalogLoadedAt = useRef<number | null>(null);
   const refreshCatalog = useCallback(async (options: { maxAgeMs?: number } = {}) => {
+    if (!tokenRef.current) return;
     if (options.maxAgeMs !== undefined && isCatalogFresh(catalogLoadedAt.current, Date.now(), options.maxAgeMs)) return;
     const seq = ++catalogSeq.current;
     locationRequest.current?.abort();
@@ -572,7 +639,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       token,
       setToken,
       isAdmin,
-      user, updateProfile, authLoading, logout, sessionNotice, sessionUnverified, retrySession, loginWithTokens,
+      user, updateProfile, authLoading, logout, signOut, signedOutByUser, sessionExpired, sessionNotice, sessionUnverified, retrySession, loginWithTokens,
       places,
       location,
       searchLocation, updateGpsLocation,
@@ -605,7 +672,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       token,
       setToken,
       isAdmin,
-      user, updateProfile, authLoading, logout, sessionNotice, sessionUnverified, retrySession, loginWithTokens,
+      user, updateProfile, authLoading, logout, signOut, signedOutByUser, sessionExpired, sessionNotice, sessionUnverified, retrySession, loginWithTokens,
       places,
       location,
       searchLocation, updateGpsLocation,

@@ -5,7 +5,7 @@ from app.models.place import Place
 
 @pytest.mark.parametrize("count", [3, 10, 20, 25])
 def test_journey_order_and_full_public_details(
-    client, admin_headers, db_session, count
+    client, admin_headers, db_session, count, reader_headers
 ):
     rows = [
         Place(
@@ -25,16 +25,16 @@ def test_journey_order_and_full_public_details(
         json={"name": "Ordered fixture", "place_ids": ids},
     )
     assert saved.status_code == 201
-    public = client.get(f"/journeys/{saved.json()['id']}").json()
+    public = client.get(f"/journeys/{saved.json()['id']}", headers=reader_headers).json()
     assert public["place_ids"] == ids
     assert [row["id"] for row in public["stops"]] == ids
     assert public["stop_count"] == count
     assert public["unavailable_stop_count"] == 0
-    assert client.get("/journeys").json()[0]["place_ids"] == ids
+    assert client.get("/journeys", headers=reader_headers).json()[0]["place_ids"] == ids
 
 
 def test_journey_accepts_drafts_but_rejects_duplicates_and_missing_stops(
-    client, admin_headers, db_session
+    client, admin_headers, db_session, reader_headers
 ):
     draft = Place(
         name="Draft fixture", latitude=10, longitude=106, publication_status="draft"
@@ -44,7 +44,7 @@ def test_journey_accepts_drafts_but_rejects_duplicates_and_missing_stops(
     saved = client.post('/admin/journeys', headers=admin_headers,
                         json={'name': 'Draft itinerary', 'place_ids': [draft.id]})
     assert saved.status_code == 201
-    public = client.get(f"/journeys/{saved.json()['id']}").json()
+    public = client.get(f"/journeys/{saved.json()['id']}", headers=reader_headers).json()
     assert public['place_ids'] == [] and public['stops'] == []
     assert public['unavailable_stop_count'] == 1
     for ids in [[draft.id, draft.id], [999999]]:
@@ -59,7 +59,7 @@ def test_journey_accepts_drafts_but_rejects_duplicates_and_missing_stops(
 
 
 def test_unpublished_stop_is_hidden_without_reordering_or_leaking_metadata(
-    client, admin_headers, db_session
+    client, admin_headers, db_session, reader_headers
 ):
     points = [
         Place(
@@ -79,7 +79,7 @@ def test_unpublished_stop_is_hidden_without_reordering_or_leaking_metadata(
     ).json()
     points[1].publication_status = "draft"
     db_session.commit()
-    public = client.get(f"/journeys/{saved['id']}").json()
+    public = client.get(f"/journeys/{saved['id']}", headers=reader_headers).json()
     assert public["place_ids"] == [points[0].id, points[2].id]
     assert public["unavailable_stop_count"] == 1
     assert "Public fixture 1" not in str(public)

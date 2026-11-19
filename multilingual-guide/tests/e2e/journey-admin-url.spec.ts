@@ -1,4 +1,7 @@
 import { test, expect } from "@playwright/test";
+import { GUEST_STATE, VIEWER_STATE } from './auth';
+
+test.use({ storageState: GUEST_STATE });
 const pixel = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg==",
   "base64",
@@ -131,39 +134,41 @@ test("URL preview can be edited, imported only as draft with pending licensed ph
     page.getByRole("button", { name: "Gỡ ảnh khỏi địa điểm", exact: true }),
   ).toBeVisible();
 });
-test("direct built routes mount without page errors and broken tiles do not remove journey markers", async ({
-  page,
-}) => {
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
-  await page.route("https://tile.openstreetmap.org/**", (route) =>
-    route.abort(),
-  );
-  for (const route of [
-    "/login",
-    "/map",
-    "/admin",
-    "/journeys",
-    "/place/db-1",
-  ]) {
-    await page.goto(route);
-    await expect(page.locator("body")).not.toBeEmpty();
-  }
-  await page.goto("/journeys");
-  await page
-    .getByRole("button", { name: "Browser Journey Fixture", exact: true })
-    .click();
-  await page
-    .getByRole("button", { name: "Bắt đầu hành trình", exact: true })
-    .click();
-  await expect(page.locator(".journey-stop-marker")).toHaveCount(2);
-  await expect(page.locator(".journey-illustration")).toHaveCount(1);
-  await expect(
-    page.getByText("Đường nối minh họa, không phải tuyến đường thực tế.", {
-      exact: false,
-    }),
-  ).toBeVisible();
-  expect(errors).toEqual([]);
+test.describe('with a stored session', () => {
+  test.use({ storageState: VIEWER_STATE });
+  test("direct built routes mount without page errors and broken tiles do not remove journey markers", async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.route("https://tile.openstreetmap.org/**", (route) =>
+      route.abort(),
+    );
+    for (const route of [
+      "/map",
+      "/admin",
+      "/journeys",
+      "/place/db-1",
+    ]) {
+      await page.goto(route);
+      await expect(page.locator("body")).not.toBeEmpty();
+    }
+    await page.goto("/journeys");
+    await page
+      .getByRole("button", { name: "Browser Journey Fixture", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "Bắt đầu hành trình", exact: true })
+      .click();
+    await expect(page.locator(".journey-stop-marker")).toHaveCount(2);
+    await expect(page.locator(".journey-illustration")).toHaveCount(1);
+    await expect(
+      page.getByText("Đường nối minh họa, không phải tuyến đường thực tế.", {
+        exact: false,
+      }),
+    ).toBeVisible();
+    expect(errors).toEqual([]);
+  });
 });
 
 test('mobile journey modal keeps save visible while selecting multiple stops', async ({ page }) => {

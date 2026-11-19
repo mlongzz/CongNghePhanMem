@@ -32,41 +32,41 @@ def admin_headers(db_session):
     return {"Authorization": "Bearer " + create_access_token(admin.id)}
 
 
-def test_draft_published_unpublished_archived_restored_lifecycle(client, admin_headers, db_session):
+def test_draft_published_unpublished_archived_restored_lifecycle(client, admin_headers, db_session, reader_headers):
     h = admin_headers
     created = client.post('/admin/places', headers=h, json={'name': 'Museum', 'latitude': 10, 'longitude': 106}).json()
     pid = created['id']
     assert created['publication_status'] == 'draft'
-    assert client.get(f'/places/{pid}').status_code == 404
-    assert client.get('/places/search?q=Museum').json() == []
-    assert client.get('/places/nearby?latitude=10&longitude=106').json() == []
+    assert client.get(f'/places/{pid}', headers=reader_headers).status_code == 404
+    assert client.get('/places/search?q=Museum', headers=reader_headers).json() == []
+    assert client.get('/places/nearby?latitude=10&longitude=106', headers=reader_headers).json() == []
     assert client.put(f'/admin/places/{pid}', headers=h, json={'publication_status': 'published'}).status_code == 200
-    assert client.get(f'/places/{pid}').status_code == 200
+    assert client.get(f'/places/{pid}', headers=reader_headers).status_code == 200
     guide = {'title': 'Story', 'content': 'Reviewed narration', 'language_code': 'vi'}
     assert client.put(f'/admin/places/{pid}/guide-content/vi', headers=h, json=guide).json()['publication_status'] == 'draft'
-    assert client.get(f'/places/{pid}/guide-content/languages').json() == []
+    assert client.get(f'/places/{pid}/guide-content/languages', headers=reader_headers).json() == []
     url = f'/admin/places/{pid}/guide-content/vi'
     published = client.put(url, headers=h, json={'publication_status': 'published'}).json()
     assert published['title'] == 'Story' and published['content'] == 'Reviewed narration'
-    assert client.get(f'/places/{pid}/guide-content?language=vi').status_code == 200
+    assert client.get(f'/places/{pid}/guide-content?language=vi', headers=reader_headers).status_code == 200
     assert client.put(url, headers=h, json={'content': 'Edited narration'}).json()['publication_status'] == 'draft'
-    assert client.get(f'/places/{pid}/guide-content?language=vi').status_code == 404
+    assert client.get(f'/places/{pid}/guide-content?language=vi', headers=reader_headers).status_code == 404
     assert client.put(f'/admin/places/{pid}/guide-content/en', headers=h, json={'publication_status': 'published'}).status_code == 422
     assert client.delete(f'/admin/places/{pid}', headers=h).status_code == 204
-    assert client.get(f'/places/{pid}').status_code == 404
+    assert client.get(f'/places/{pid}', headers=reader_headers).status_code == 404
     assert client.get('/admin/places', headers=h).json()['total'] == 0
     assert client.get('/admin/places?include_deleted=true', headers=h).json()['total'] == 1
     assert db_session.query(Place).count() == 1 and db_session.query(GuideContent).count() == 1
     assert client.put(f'/admin/places/{pid}', headers=h, json={'publication_status': 'published'}).status_code == 409
     assert client.post(f'/admin/places/{pid}/restore', headers=h).json()['publication_status'] == 'draft'
     assert db_session.get(Place, pid).deleted_at is None
-    assert client.get(f'/places/{pid}').status_code == 404
+    assert client.get(f'/places/{pid}', headers=reader_headers).status_code == 404
 
 
 @pytest.mark.parametrize('parameter,value', [('latitude', 'nan'), ('longitude', 'inf'), ('latitude', '91'), ('longitude', '-181'), ('radius_km', 'nan'), ('radius_km', '0'), ('radius_km', '51'), ('radius_km', '500'), ('limit', '0'), ('limit', '101')])
-def test_nearby_rejects_invalid_query_values(client, parameter, value):
+def test_nearby_rejects_invalid_query_values(client, parameter, value, reader_headers):
     params = {'latitude': 10, 'longitude': 106, parameter: value}
-    assert client.get('/places/nearby', params=params).status_code == 422
+    assert client.get('/places/nearby', params=params, headers=reader_headers).status_code == 422
 
 
 @pytest.mark.parametrize('latitude,longitude,poi_lat,poi_lon,radius', [
@@ -103,7 +103,7 @@ def osm_payload():
                         'category': 'museum'}]}
 
 
-def test_osm_preview_approval_atomic_import_idempotence_and_provenance(client, admin_headers, db_session):
+def test_osm_preview_approval_atomic_import_idempotence_and_provenance(client, admin_headers, db_session, reader_headers):
     h, data = admin_headers, osm_payload()
     assert client.post('/admin/imports/osm/preview', json=data).status_code == 401
     preview = client.post('/admin/imports/osm/preview', headers=h, json=data).json()
@@ -116,7 +116,7 @@ def test_osm_preview_approval_atomic_import_idempotence_and_provenance(client, a
     row = db_session.query(Place).one()
     assert row.source == 'osm' and row.source_id == 'node/123' and row.publication_status == 'draft'
     assert row.source_url == 'https://www.openstreetmap.org/node/123' and 'ODbL' in row.source_license
-    assert client.get('/places').json() == []
+    assert client.get('/places', headers=reader_headers).json() == []
     repeat_preview = client.post('/admin/imports/osm/preview', headers=h, json=data).json()
     assert repeat_preview['existing'] == 1
     assert client.post('/admin/imports/osm', headers=h, json={**data, 'preview_token': repeat_preview['preview_token']}).status_code == 200
@@ -170,14 +170,14 @@ def test_osmium_point_ids_and_geojson_coordinate_order_are_preserved():
     assert rejected[0]['reason'] == 'point_geometry_required'
 
 
-def test_nearby_accepts_the_maximum_public_radius_and_orders_by_distance(client, db_session):
+def test_nearby_accepts_the_maximum_public_radius_and_orders_by_distance(client, db_session, reader_headers):
     db_session.add_all([
         Place(name='Far', latitude=10.3, longitude=106),
         Place(name='Near', latitude=10.001, longitude=106),
         Place(name='Outside', latitude=11.0, longitude=106),
     ])
     db_session.commit()
-    response = client.get('/places/nearby', params={'latitude': 10, 'longitude': 106, 'radius_km': 50})
+    response = client.get('/places/nearby', params={'latitude': 10, 'longitude': 106, 'radius_km': 50}, headers=reader_headers)
     assert response.status_code == 200
     assert [row['name'] for row in response.json()] == ['Near', 'Far']
 

@@ -69,7 +69,7 @@ def test_invalid_jwt_claims_are_rejected(client, admin_headers):
     assert client.get('/admin/me', headers={"Authorization": 'Bearer ' + create_refresh_token(1)}).status_code == 401
 
 
-def test_admin_crud_shared_api_and_audit(client, admin_headers):
+def test_admin_crud_shared_api_and_audit(client, admin_headers, reader_headers):
     h = admin_headers
     assert client.get('/admin/overview', headers=h).json()['kpis']['plays'] == 0
     assert client.post('/admin/places', headers=h, json={"name": "Invalid", "latitude": 91, "longitude": 0}).status_code == 422
@@ -77,23 +77,23 @@ def test_admin_crud_shared_api_and_audit(client, admin_headers):
     assert place.status_code == 201
     pid = place.json()['id']
     assert place.json()['publication_status'] == 'draft'
-    assert client.get(f'/places/{pid}').status_code == 404
+    assert client.get(f'/places/{pid}', headers=reader_headers).status_code == 404
     assert client.put(f'/admin/places/{pid}', headers=h, json={"publication_status": "published"}).status_code == 200
-    assert client.get(f'/places/{pid}').json()['name'] == 'Museum'
+    assert client.get(f'/places/{pid}', headers=reader_headers).json()['name'] == 'Museum'
     assert client.put(f'/admin/places/{pid}', headers=h, json={"name": "Updated"}).status_code == 200
-    assert client.get(f'/places/{pid}').status_code == 404
+    assert client.get(f'/places/{pid}', headers=reader_headers).status_code == 404
     assert client.put(f'/admin/places/{pid}', headers=h, json={"publication_status": "published"}).status_code == 200
     assert client.get('/admin/places?q=Updated&page_size=1', headers=h).json()['total'] == 1
     assert client.get('/admin/places?page=0', headers=h).status_code == 422
     guide = {"title": "Title", "content": "Verified script", "language_code": "en", "publication_status": "published"}
     result = client.put(f'/admin/places/{pid}/guide-content/en', headers=h, json=guide)
     assert result.status_code == 200
-    assert client.get(f'/places/{pid}/guide-content?language=en').json()['content'] == 'Verified script'
+    assert client.get(f'/places/{pid}/guide-content?language=en', headers=reader_headers).json()['content'] == 'Verified script'
     assert client.put(f'/admin/places/{pid}/guide-content/vi', headers=h, json=guide).status_code == 422
     journey = client.post('/admin/journeys', headers=h, json={"name": "Walk", "place_ids": [pid]})
     assert journey.status_code == 201
     jid = journey.json()['id']
-    assert client.get(f'/journeys/{jid}').json()['place_ids'] == [pid]
+    assert client.get(f'/journeys/{jid}', headers=reader_headers).json()['place_ids'] == [pid]
     assert client.post('/admin/journeys', headers=h, json={"name": "Wrong", "place_ids": [9999]}).status_code == 422
     assert client.post('/admin/journeys', headers=h, json={"name": "Duplicate", "place_ids": [pid, pid]}).status_code == 422
     assert client.put(f'/admin/journeys/{jid}', headers=h, json={"name": "Empty route", "place_ids": []}).json()['place_ids'] == []
@@ -103,7 +103,7 @@ def test_admin_crud_shared_api_and_audit(client, admin_headers):
     assert logs['total'] >= 5
     assert client.delete(f'/admin/journeys/{jid}', headers=h).status_code == 204
     assert client.delete(f'/admin/places/{pid}', headers=h).status_code == 204
-    assert client.get(f'/places/{pid}').status_code == 404
+    assert client.get(f'/places/{pid}', headers=reader_headers).status_code == 404
     assert client.get('/admin/guides', headers=h).json()['total'] == 1
 
 

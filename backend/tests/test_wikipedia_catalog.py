@@ -43,7 +43,7 @@ def api(db_session, monkeypatch, tmp_path):
         app.dependency_overrides.update(previous)
 
 
-def test_preview_import_draft_provenance_repeat_and_rbac(api, db_session):
+def test_preview_import_draft_provenance_repeat_and_rbac(api, db_session, reader_headers):
     client, headers, user_id, _ = api
     url = "/admin/catalog/hcmc-discovery"
     assert client.get(url).status_code == 401
@@ -59,7 +59,7 @@ def test_preview_import_draft_provenance_repeat_and_rbac(api, db_session):
     assert (place.source, place.source_id, place.publication_status) == ("wikipedia", "vi:123", "draft")
     assert place.description is None and place.image_url is None
     assert place.source_license == "CC-BY-SA-4.0"
-    assert client.get("/places").json() == [] and db_session.query(GuideContent).count() == 0
+    assert client.get("/places", headers=reader_headers).json() == [] and db_session.query(GuideContent).count() == 0
     assert db_session.query(AuditLog).filter_by(resource="wikipedia").count() == 1
     evidence = db_session.get(AdminSetting, service.BUNDLE_ID).value["vi:123"]["snapshot"]
     assert evidence["source_revision_id"] == 456 and evidence["coordinate_role"] == "primary_article_coordinate_not_verified_entrance"

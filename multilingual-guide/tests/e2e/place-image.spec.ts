@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { ACCESS_KEY, GUEST_STATE, REFRESH_KEY, VIEWER_EMAIL, VIEWER_PASSWORD, loginApi } from './auth';
 
 // Explicit HTTP fixtures exercise React Native Web's actual Image and Pressable DOM.
 const pixel = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg==', 'base64');
@@ -95,40 +96,50 @@ test('failed thumbnail falls back to full image without retry or lost credits', 
   expect(warnings).toEqual([]);
 });
 
-test('journey and Admin image tiles keep retry outside navigation buttons', async ({ page }) => {
-  const warnings = captureWarnings(page);
-  let recover = false;
-  await page.route(photo, route => recover
-    ? route.fulfill({ contentType: 'image/png', body: pixel, headers: { 'Cache-Control': 'no-store' } })
-    : route.fulfill({ status: 503, body: 'Fixture outage', headers: { 'Cache-Control': 'no-store' } }));
-  const journey = { id: 990001, name: 'QA Image Journey', description: 'Explicit fixture', image_url: photo, stops: [row()] };
-  await page.route(/http:\/\/127\.0\.0\.1:8765\/journeys(?:\?|\/990001)/, route => route.fulfill({ json: route.request().url().includes('/990001') ? journey : [journey] }));
-  await page.goto('/journeys');
-  await expect(page.getByRole('button', { name: 'Thử tải ảnh', exact: true })).toBeVisible();
-  await validDom(page);
-  await page.getByRole('button', { name: 'Thử tải ảnh', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'QA Image Journey', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'QA Image Journey', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Bắt đầu hành trình', exact: true })).toBeVisible();
+test.describe('without a stored session', () => {
+  test.use({ storageState: GUEST_STATE });
+  test('journey and Admin image tiles keep retry outside navigation buttons', async ({ page, request }) => {
+    const warnings = captureWarnings(page);
+    let recover = false;
+    await page.route(photo, route => recover
+      ? route.fulfill({ contentType: 'image/png', body: pixel, headers: { 'Cache-Control': 'no-store' } })
+      : route.fulfill({ status: 503, body: 'Fixture outage', headers: { 'Cache-Control': 'no-store' } }));
+    const journey = { id: 990001, name: 'QA Image Journey', description: 'Explicit fixture', image_url: photo, stops: [row()] };
+    await page.route(/http:\/\/127\.0\.0\.1:8765\/journeys(?:\?|\/990001)/, route => route.fulfill({ json: route.request().url().includes('/990001') ? journey : [journey] }));
+    const viewer = await loginApi(request, VIEWER_EMAIL, VIEWER_PASSWORD);
+    await page.goto('/login');
+    await page.evaluate(({ access, refresh, accessKey, refreshKey }) => {
+      localStorage.setItem(accessKey, access);
+      localStorage.setItem(refreshKey, refresh);
+    }, { access: viewer.access_token, refresh: viewer.refresh_token, accessKey: ACCESS_KEY, refreshKey: REFRESH_KEY });
+    await page.goto('/journeys');
+    await expect(page.getByRole('button', { name: 'Thử tải ảnh', exact: true })).toBeVisible();
+    await validDom(page);
+    await page.getByRole('button', { name: 'Thử tải ảnh', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'QA Image Journey', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'QA Image Journey', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Bắt đầu hành trình', exact: true })).toBeVisible();
 
-  await page.goto('/login');
-  await page.getByLabel('Địa chỉ email', { exact: true }).fill('admin@e2e.example.com');
-  await page.getByLabel('Mật khẩu', { exact: true }).fill('TestPassword123!');
-  await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click();
-  await expect(page).toHaveURL(/\/admin$/);
-  await page.route(/http:\/\/127\.0\.0\.1:8765\/admin\/images\/places\?/, route => route.fulfill({ json: { items: [{ ...row(), images: { approved: 0, pending: 1 } }, { ...row(''), id: 990002, name: 'Missing photo fixture', images: {} }], total: 2, pages: 1 } }));
-  await page.getByText('Thư viện ảnh', { exact: true }).click();
-  const manager = page.getByTestId('image-manager');
-  await expect(manager.getByRole('button', { name: 'Thử tải ảnh', exact: true })).toBeVisible();
-  await expect(manager.getByText('Chưa tải được ảnh xem trước; hãy thử lại')).toBeVisible();
-  await expect(manager.getByText('Chưa có ảnh bìa', { exact: true })).toBeVisible();
-  await validDom(page);
-  recover = true;
-  await manager.getByRole('button', { name: 'Thử tải ảnh', exact: true }).click();
-  await expect(manager.getByText('Ảnh xem trước đã tải được')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Đóng thư viện ảnh', exact: true })).toHaveCount(0);
-  await manager.getByRole('button', { name: 'Quản lý ảnh QA Image Fixture', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Đóng thư viện ảnh', exact: true })).toBeVisible();
-  await validDom(page);
-  expect(warnings).toEqual([]);
+    await page.evaluate(() => localStorage.clear());
+    await page.goto('/login');
+    await page.getByLabel('Địa chỉ email', { exact: true }).fill('admin@e2e.example.com');
+    await page.getByLabel('Mật khẩu', { exact: true }).fill('TestPassword123!');
+    await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click();
+    await expect(page).toHaveURL(/\/admin$/);
+    await page.route(/http:\/\/127\.0\.0\.1:8765\/admin\/images\/places\?/, route => route.fulfill({ json: { items: [{ ...row(), images: { approved: 0, pending: 1 } }, { ...row(''), id: 990002, name: 'Missing photo fixture', images: {} }], total: 2, pages: 1 } }));
+    await page.getByText('Thư viện ảnh', { exact: true }).click();
+    const manager = page.getByTestId('image-manager');
+    await expect(manager.getByRole('button', { name: 'Thử tải ảnh', exact: true })).toBeVisible();
+    await expect(manager.getByText('Chưa tải được ảnh xem trước; hãy thử lại')).toBeVisible();
+    await expect(manager.getByText('Chưa có ảnh bìa', { exact: true })).toBeVisible();
+    await validDom(page);
+    recover = true;
+    await manager.getByRole('button', { name: 'Thử tải ảnh', exact: true }).click();
+    await expect(manager.getByText('Ảnh xem trước đã tải được')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Đóng thư viện ảnh', exact: true })).toHaveCount(0);
+    await manager.getByRole('button', { name: 'Quản lý ảnh QA Image Fixture', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Đóng thư viện ảnh', exact: true })).toBeVisible();
+    await validDom(page);
+    expect(warnings).toEqual([]);
+  });
 });

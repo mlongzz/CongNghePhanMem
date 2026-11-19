@@ -30,7 +30,7 @@ def no_network(*args, **kwargs):
     pytest.fail('HTTP map requests must never contact Overpass')
 
 
-def test_public_endpoint_is_cache_only_even_with_forced_refresh(tmp_path, db_session):
+def test_public_endpoint_is_cache_only_even_with_forced_refresh(tmp_path, db_session, reader_headers):
     api = service(no_network, path=tmp_path / 'cache.json', network=False)
     old = app.dependency_overrides.copy()
     app.dependency_overrides[get_osm_service] = lambda: api
@@ -38,10 +38,10 @@ def test_public_endpoint_is_cache_only_even_with_forced_refresh(tmp_path, db_ses
     try:
         client = TestClient(app)
         for force in ['', '&force_refresh=true']:
-            response = client.get(f'/osm/nearby?latitude={LAT}&longitude={LON}&radius_km=3' + force)
+            response = client.get(f'/osm/nearby?latitude={LAT}&longitude={LON}&radius_km=3' + force, headers=reader_headers)
             assert response.status_code == 503 and response.headers['retry-after'] == '3600'
             assert 'PostgreSQL' in response.json()['detail']
-        assert client.get(f'/places/nearby?latitude={LAT}&longitude={LON}&radius_km=3').json() == []
+        assert client.get(f'/places/nearby?latitude={LAT}&longitude={LON}&radius_km=3', headers=reader_headers).json() == []
         assert db_session.query(Place).count() == 0
     finally:
         app.dependency_overrides.clear(); app.dependency_overrides.update(old)

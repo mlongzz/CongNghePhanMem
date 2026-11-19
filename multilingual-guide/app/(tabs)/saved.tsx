@@ -40,7 +40,7 @@ export default function Saved() {
   return <SafeAreaView style={s.safe}><ScrollView contentContainerStyle={s.page}>
     <View style={s.icon}><Ionicons name="heart" size={21} color={C.primary} /></View>
     <Text style={s.subtitle}>{t('BỘ SƯU TẬP CỦA BẠN')}</Text><Text style={s.title}>{t('Địa điểm yêu thích')}</Text>
-    <Text style={s.info}>{t(token ? 'Được đồng bộ với tài khoản của bạn.' : 'Được lưu trên thiết bị khi chưa đăng nhập.')}</Text>
+    <Text style={s.info}>{t('Được đồng bộ với tài khoản của bạn.')}</Text>
     {favorites.some(id => !id.startsWith('db-')) && <Text style={s.info}>{t('Địa danh khám phá được lưu trên thiết bị này.')}</Text>}
     <ErrorMessage message={error || favoriteError} />
     {(loading || favoritesLoading) ? <LoadingState /> : places.length ? <View style={s.list}>{places.map(p => <PlaceCard key={p.id} place={p} wide />)}</View> : !(error || favoriteError) && <EmptyState icon="heart-outline" title="Chưa có điểm đến yêu thích" text="Nhấn vào biểu tượng trái tim tại các địa điểm để lưu và quay lại." />}
