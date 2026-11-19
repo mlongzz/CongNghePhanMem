@@ -1,0 +1,16 @@
+node_modules
+.expo
+dist
+build-android
+build-ios
+.git
+.github
+.env
+.env.*
+!.env.example
+.test-artifacts
+test-results
+playwright-report
+.wrangler
+.verification
+*.log
