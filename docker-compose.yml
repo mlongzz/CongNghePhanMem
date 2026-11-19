@@ -1,0 +1,97 @@
+# Chạy cả hệ thống Quận 1 Audio Guide bằng Docker Compose (local/demo).
+# Dùng lại Docker volumes từ lần chạy thủ công trước đó.
+name: cnpm
+
+x-backend-build: &backend-build
+  context: ./backend
+  dockerfile: Dockerfile
+
+x-backend-env: &backend-env
+  DATABASE_URL: "postgresql://guide:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/multilingual_guide"
+  SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
+  APP_ENV: development
+  MEDIA_STORAGE_BACKEND: local
+  UPLOAD_DIR: /app/cache/uploads
+  OSM_CACHE_PATH: /app/cache/osm-poi-v2.json
+  ALLOW_LAN_ORIGINS: "true"
+  ALLOWED_ORIGINS: "http://localhost:8081,http://127.0.0.1:8081"
+  ADMIN_USER_IDS: ${ADMIN_USER_IDS:-}
+
+services:
+  db:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: guide
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: multilingual_guide
+    volumes:
+      # PostgreSQL 18 stores the cluster under /var/lib/postgresql.
+      - db_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U guide -d multilingual_guide"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  # Alembic chạy trước backend; không tự seed hoặc ghi đè dữ liệu du lịch.
+  migrate:
+    build: *backend-build
+    image: cnpm-backend:compose
+    restart: "no"
+    environment: *backend-env
+    volumes:
+      - backend_cache:/app/cache
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+
+  backend:
+    build: *backend-build
+    image: cnpm-backend:compose
+    restart: unless-stopped
+    environment: *backend-env
+    volumes:
+      - backend_cache:/app/cache
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  frontend:
+    build:
+      context: ./multilingual-guide
+      dockerfile: Dockerfile
+      args:
+        # Địa chỉ API được nhúng vào JS trong lúc build Expo Web.
+        EXPO_PUBLIC_API_URL: ${EXPO_PUBLIC_API_URL:-http://127.0.0.1:8000}
+    image: cnpm-frontend:compose
+    restart: unless-stopped
+    ports:
+      - "8081:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  db_data:
+    name: cnpm-db-data
+  backend_cache:
+    name: cnpm-backend-cache
