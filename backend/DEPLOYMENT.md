@@ -111,6 +111,6 @@ inside a sleeping Render Free web process. Use a separately approved scheduler o
 worker. New demo data are also preview-only until an Admin explicitly imports
 drafts; nothing is automatically seeded into production.
 
-See [the testing guide](../docs/TESTING_GUIDE.md) and
-[acceptance report](../docs/REPAIR_ACCEPTANCE_REPORT.md) for the current handoff,
+See [the root README](../README.md) and
+[frontend README](../multilingual-guide/README.md) for the handoff,
 validation and local commands. No cloud deployment or production database modification was performed.
