@@ -24,6 +24,21 @@ const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': types[path.extname(file)] || 'application/octet-stream' });
   fs.createReadStream(file).pipe(res);
 });
+async function configurePage(page, origin) {
+  await page.route('**/*', route => route.request().url().startsWith(origin + '/') ? route.continue() : route.abort());
+  // Release-only fixtures keep protected pages isolated from real accounts and APIs.
+  await page.addInitScript(() => {
+    const authenticated = /^\/(map|journeys)(\/|$)/.test(location.pathname);
+    for (const [key, value] of [['mg_access_token_v3', 'release-fixture-access'], ['mg_refresh_token_v3', 'release-fixture-refresh']]) {
+      if (authenticated) localStorage.setItem(key, value);
+      else localStorage.removeItem(key);
+    }
+  });
+  await page.route('**/users/me', route => route.fulfill({ json: {
+    id: 999, email: 'release@example.test', full_name: 'Release Fixture', language: 'vi', role: 'user', created_at: '2026-01-01T00:00:00Z',
+  } }));
+  await page.route('**/admin/me', route => route.fulfill({ status: 403, json: { detail: 'Release viewer fixture' } }));
+}
 (async () => {
   let browser;
   try {
@@ -35,12 +50,12 @@ const server = http.createServer((req, res) => {
       const page = await context.newPage();
       const errors = [];
       page.on('pageerror', error => errors.push(error.message));
-      await page.route('**/*', route => route.request().url().startsWith(origin + '/') ? route.continue() : route.abort());
-      for (const route of ['map', 'register']) {
+      await configurePage(page, origin);
+      for (const route of ['login', 'map', 'register']) {
         await page.goto(`${origin}/${route}`, { waitUntil: 'networkidle' });
         if (route === 'map') await page.getByTestId('places-map').waitFor();
         else {
-          await page.getByRole('button', { name: 'Tạo tài khoản', exact: true }).waitFor();
+          await page.getByRole('button', { name: route === 'login' ? 'Đăng nhập' : 'Tạo tài khoản', exact: true }).waitFor();
           await expect(page.getByTestId('auth-form')).toHaveCSS('opacity', '1');
         }
         const diagnostics = await page.getByRole('button', { name: 'Developer Diagnostics', exact: true }).count();
@@ -50,23 +65,27 @@ const server = http.createServer((req, res) => {
         report.cases.push({ route, width, diagnostics, overflow, pageErrors: [...errors], screenshot });
         if (diagnostics || overflow || errors.length) throw new Error(`Release layout failed: ${route}/${width}`);
       }
-      if (width === 390) {
+      {
         for (const [language, label, authTitle, mapTitle] of [
-          ['en', 'English', 'Start your journey', 'Explore around you'],
-          ['fr', 'Français', 'Commencez votre voyage', 'Explorez les environs'],
-          ['ja', '日本語', '旅を始めましょう', '近くを探索'],
-          ['vi', 'Tiếng Việt', 'Bắt đầu hành trình của bạn', 'Khám phá quanh bạn'],
+          ['en', 'English', 'Start your journey', 'Explore District 1'],
+          ['fr', 'Français', 'Commencez votre voyage', 'Découvrir le 1er arrondissement'],
+          ['ja', '日本語', '旅を始めましょう', '1区を探索'],
+          ['vi', 'Tiếng Việt', 'Bắt đầu hành trình của bạn', 'Khám phá Quận 1'],
         ]) {
           await page.goto(`${origin}/register`, { waitUntil: 'networkidle' });
           await page.getByRole('button', { name: /^(Chọn ngôn ngữ|Choose language|Choisir la langue|言語を選択)$/ }).click();
           await page.getByRole('dialog').getByRole('radio', { name: label, exact: true }).click();
           await expect(page.getByText(authTitle, { exact: true })).toBeVisible();
+          const authOverflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1);
+          expect(authOverflow).toBe(false);
           await page.goto(`${origin}/map`, { waitUntil: 'networkidle' });
           await expect(page.getByText(mapTitle, { exact: true })).toBeVisible();
           await page.reload({ waitUntil: 'networkidle' });
           await expect(page.getByText(mapTitle, { exact: true })).toBeVisible();
           expect(errors).toEqual([]);
-          report.languageChecks.push({ language, auth: true, map: true, persistedAfterReload: true });
+          const mapOverflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1);
+          expect(mapOverflow).toBe(false);
+          report.languageChecks.push({ language, width, auth: true, map: true, persistedAfterReload: true, authOverflow, mapOverflow });
         }
       }
       await context.close();
@@ -76,7 +95,7 @@ const server = http.createServer((req, res) => {
     const safePage = await safeContext.newPage();
     const hostile = '<img src=x onerror="window.__guideInjected=true"> Tooltip fixture';
     const fixture = { id: 999, name: 'Tooltip safety fixture', description: 'Explicit release-only fixture', place_ids: [999], stops: [{ id:999, name:hostile, latitude:10.77, longitude:106.69, publication_status:'published' }] };
-    await safePage.route('**/*', route => route.request().url().startsWith(origin + '/') ? route.continue() : route.abort());
+    await configurePage(safePage, origin);
     await safePage.route('**/journeys?**', route => route.fulfill({json:[fixture]}));
     await safePage.route('**/journeys/999', route => route.fulfill({json:fixture}));
     await safePage.goto(`${origin}/journeys`, {waitUntil:'networkidle'});
