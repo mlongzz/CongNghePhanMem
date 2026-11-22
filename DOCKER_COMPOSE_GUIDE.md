@@ -27,6 +27,21 @@ Sửa `.env`: `POSTGRES_PASSWORD` phải chính là mật khẩu hiện có tron
 trong hướng dẫn chạy Docker thủ công trước đó, mật khẩu ví dụ là `DevPassword123!`.
 Nếu dùng mật khẩu khác, nhập mật khẩu đã chọn. Dùng mật khẩu URL-safe (A-Z a-z 0-9 _ . ! -)
 vì nó được đặt trong chuỗi kết nối PostgreSQL.
+```dotenv
+DEMO_ACCOUNTS_ENABLED=true
+DEMO_ADMIN_EMAIL=admin@example.com
+DEMO_ADMIN_PASSWORD=Admin@123
+DEMO_GUEST_EMAIL=khach@example.com
+DEMO_GUEST_PASSWORD=Khach@123
+```
+
+Tài khoản mẫu sau khi seed thành công:
+
+| Vai trò | Email | Mật khẩu |
+| --- | --- | --- |
+| Quản trị viên | `admin@example.com` | `Admin@123` |
+| Khách | `khach@example.com` | `Khach@123` |
+
 
 Tạo `SECRET_KEY` ngẫu nhiên (PowerShell):
 
@@ -86,6 +101,7 @@ docker compose down
 
 Đối với máy clone mới, cần file `.env` riêng, Docker Desktop và các volume được
 tạo tự động. Dữ liệu Quận 1 không tự xuất hiện cho tới khi được nhập bằng công cụ
-được ghi trong README gốc, và tài khoản mẫu không được tự sinh ra.
+được ghi trong README gốc. Tài khoản mẫu được tạo bởi `seed_demo_accounts` chỉ
+khi `DEMO_ACCOUNTS_ENABLED=true` và database chưa có người dùng nào.
 
 

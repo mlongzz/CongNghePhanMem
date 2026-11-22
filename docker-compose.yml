@@ -79,12 +79,30 @@ services:
         condition: service_completed_successfully
       seed_demo:
         condition: service_completed_successfully
+      seed_accounts:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"]
       interval: 15s
       timeout: 5s
       retries: 10
       start_period: 30s
+  seed_accounts:
+    build: *backend-build
+    image: cnpm-backend:compose
+    restart: "no"
+    env_file:
+      - .env
+    environment: *backend-env
+    volumes:
+      - backend_cache:/app/cache
+    depends_on:
+      seed_demo:
+        condition: service_completed_successfully
+    command:
+      - python
+      - -m
+      - scripts.seed_demo_accounts
 
   frontend:
     build:
