@@ -112,7 +112,7 @@ Thuyết minh dùng giọng có trên thiết bị. Nội dung chính thức ưu
 
 ## Dữ liệu demo sau khi clone
 
-Mười địa điểm có 40 bài Việt–Anh–Pháp–Nhật kèm nguồn và 10 ảnh Commons được cấp phép. Bộ dựng mới còn tạo một hành trình bốn điểm trung tâm; không tạo tài khoản hoặc lịch sử cá nhân. Xem [rà soát ngày 02/11](docs/REVIEW_2026-11-02.md) cùng [ghi công ảnh](docs/DEMO_IMAGE_CREDITS.md). Các script sửa dữ liệu phát triển chỉ nhận đúng baseline đã kiểm tra và yêu cầu backup đã khôi phục thử; không chạy chúng trên database khác để thử.
+Mười địa điểm có 40 bài Việt–Anh–Pháp–Nhật kèm nguồn và 10 ảnh Commons được cấp phép. Bộ dựng mới còn tạo một hành trình bốn điểm trung tâm; không tạo tài khoản hoặc lịch sử cá nhân. Các script sửa dữ liệu phát triển chỉ nhận đúng baseline đã kiểm tra và yêu cầu backup đã khôi phục thử; không chạy chúng trên database khác để thử.
 
 Để dựng mới, dùng **database PostgreSQL local trống riêng** có tên `mg_demo_*`, cấu hình `DATABASE_URL` cho terminal đó, rồi từ `backend` chạy:
 
@@ -149,15 +149,13 @@ npm.cmd run build:web
 
 `verify_postgres` chỉ chấp nhận PostgreSQL local; cần tài khoản có quyền tạo database thử. Có thể cấu hình `TEST_DATABASE_ADMIN_URL` riêng. Runner tạo database `mg_test_<uuid>`, chạy migration/kiểm thử và xóa đúng database của lần chạy. Nếu không có PostgreSQL thử, `npm.cmd run test:e2e` dùng SQLite tạm. E2E cần Chrome và cổng 8765/8099 trống.
 
-Từ root, tạo bản sao sạch bằng `python scripts/prepare_handoff.py .verification/handoff-source`. Script yêu cầu thư mục đích mới, không chép `.env`, dependency, cache, upload, gói `.tgz` hoặc kết quả test. Cài và build lại trong bản sao đó theo [hướng dẫn kiểm thử](docs/TESTING_GUIDE.md).
+Từ root, tạo bản sao sạch bằng `python scripts/prepare_handoff.py .verification/handoff-source`. Script yêu cầu thư mục đích mới, không chép `.env`, dependency, cache, upload, gói `.tgz` hoặc kết quả test. Cài và build lại trong bản sao đó theo [README frontend](multilingual-guide/README.md) và các lệnh kiểm tra ở trên.
 
 Nếu bản làm việc không có `.git`, không khởi tạo lịch sử để đẩy đè kho nhóm: đối chiếu với bản clone hoặc cây GitHub trước khi đồng bộ. Các output đã bị Git theo dõi cần được xem xét riêng; `.gitignore` không tự bỏ theo dõi chúng. Các báo cáo nghiệm thu ghi rõ phạm vi và giới hạn của từng lần kiểm tra.
 
-- [PRD và tiêu chí nghiệm thu](docs/PRD.md)
-- [Hướng dẫn kiểm thử và thiết bị thật](docs/TESTING_GUIDE.md)
-- [Trạng thái triển khai](docs/IMPLEMENTATION_STATUS.md)
-- [Rà soát dữ liệu và giới hạn ngày 31/10/2026](docs/REVIEW_2026-10-31.md)
-- [Demo đã cập nhật ngày 01/11/2026](docs/DEMO_RELEASE_2026-11-01.md)
-- [Báo cáo sửa chữa, bằng chứng và điểm tham khảo](docs/REPAIR_ACCEPTANCE_REPORT.md)
+- [PRD và tiêu chí nghiệm thu](PRD_Group10.pdf)
+- [Hướng dẫn Docker Compose](DOCKER_COMPOSE_GUIDE.md)
+- [README frontend và lệnh kiểm tra](multilingual-guide/README.md)
+- [Triển khai backend](backend/DEPLOYMENT.md)
 
 [Workflow](.github/workflows/ci.yml) kiểm tra SQLite/PostgreSQL, frontend, E2E và Docker. Mỗi commit mới phải có kết quả riêng trong PR. Chỉ tag `v*` sau khi tất cả job đạt mới publish image lên GHCR; chưa publish hoặc deploy production.
