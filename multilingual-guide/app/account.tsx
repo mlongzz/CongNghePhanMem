@@ -6,6 +6,7 @@ import { useApp } from '../src/context/AppContext';
 import { apiFetch, type UserResponse } from '../src/services/api';
 import type { Language } from '../src/data/places';
 import { useI18n } from '../src/hooks/useI18n';
+import { validateGmail } from '../src/services/authValidation';
 import PresencePrivacy from '../src/components/PresencePrivacy';
 
 function AccountForm() {
@@ -13,9 +14,13 @@ function AccountForm() {
   const { token, user, setLanguage, updateProfile } = useApp();
   const [name, setName] = useState(user?.full_name ?? ''); const [email, setEmail] = useState(user?.email ?? ''); const [language, chooseLanguage] = useState(user?.language ?? 'vi');
   const [busy, setBusy] = useState(false); const [error, setError] = useState(''); const [notice, setNotice] = useState('');
+  const [emailError, setEmailError] = useState('');
   const save = async () => {
     if (!token || !user || busy) return;
-    if (!name.trim() || Array.from(name.trim()).length > 100 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { setError('Nhập tên từ 1–100 ký tự và email hợp lệ.'); return; }
+    const nextEmailError = validateGmail(email);
+    setEmailError(nextEmailError); setError(''); setNotice('');
+    if (!name.trim() || Array.from(name.trim()).length > 100) { setError('Nhập tên từ 1–100 ký tự.'); return; }
+    if (nextEmailError) return;
     setBusy(true); setError(''); setNotice('');
     try {
       const result = await apiFetch<UserResponse>(`/users/${user.id}`, { token, method: 'PUT', body: JSON.stringify({ full_name: name.trim(), email: email.trim(), language }) });
@@ -26,7 +31,7 @@ function AccountForm() {
   if (!token) return <LoadingState />;
   return <Screen title="Hồ sơ tài khoản"><View style={panel}>
     <AuthTextField label="Họ và tên" value={name} onChangeText={setName} autoComplete="name" autoCapitalize="words" editable={!busy} />
-    <AuthTextField label="Email" value={email} onChangeText={setEmail} autoComplete="email" keyboardType="email-address" editable={!busy} />
+    <AuthTextField label="Email" value={email} onChangeText={value => { setEmail(value); setEmailError(''); }} error={emailError} autoComplete="email" keyboardType="email-address" editable={!busy} />
     <LanguageSelector value={language} onChange={v => { if (!busy) chooseLanguage(v); }} />
     <ErrorMessage message={error} />{!!notice && <Text accessibilityRole="alert">{t(notice)}</Text>}
     <PrimaryButton title="Lưu hồ sơ" loading={busy} onPress={() => void save()} />

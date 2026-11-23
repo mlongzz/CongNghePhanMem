@@ -6,7 +6,7 @@ import { useApp } from '../../context/AppContext';
 import { ApiError, registerUser, signIn } from '../../services/api';
 import { classifyLoginError, formatCountdown } from '../../services/authErrors';
 import { sanitizeRedirect } from '../../services/authRedirect';
-import { validateAuth } from '../../services/authValidation';
+import { validateAuth, validateGmail } from '../../services/authValidation';
 import { type Language } from '../../data/places';
 import { C } from '../../theme/colors';
 import { useI18n } from '../../hooks/useI18n';
@@ -81,7 +81,10 @@ export function AuthScreen({ register = false }: { register?: boolean }) {
   return <AuthLayout title={register ? 'Bắt đầu hành trình của bạn' : 'Chào mừng trở lại'} subtitle={register ? 'Tạo tài khoản để khám phá những câu chuyện ở mỗi điểm đến.' : 'Đăng nhập để tiếp tục khám phá cùng Multilingual Guide.'}>
     {!register && params.registered === '1' && <Text accessibilityRole="alert" style={{ color: C.primaryDark, backgroundColor: C.successSoft, padding: 14, borderRadius: 12, marginBottom: 18 }}>{t('Đăng ký thành công! Bạn có thể đăng nhập ngay.')}</Text>}
     {register && <AuthTextField label="Họ và tên" icon="person-outline" value={name} onChangeText={setName} autoCapitalize="words" autoComplete="name" error={errors.name} editable={!busy && formReady} />}
-    <AuthTextField label="Địa chỉ email" icon="mail-outline" value={email} onChangeText={setEmail} keyboardType="email-address" autoComplete="email" error={errors.email} editable={!busy && formReady} returnKeyType="next" onSubmitEditing={() => passwordRef.current?.focus()} />
+    <AuthTextField label="Địa chỉ email" icon="mail-outline" value={email} onChangeText={value => {
+      setEmail(value);
+      setErrors(previous => previous.email ? { ...previous, email: validateGmail(value) } : previous);
+    }} onBlur={() => setErrors(previous => ({ ...previous, email: validateGmail(email) }))} keyboardType="email-address" autoComplete="email" error={errors.email} editable={!busy && formReady} returnKeyType="next" onSubmitEditing={() => passwordRef.current?.focus()} />
     <AuthTextField label="Mật khẩu" icon="lock-closed-outline" value={password} onChangeText={setPassword} secureTextEntry autoComplete={register ? 'new-password' : 'current-password'} error={errors.password} editable={!busy && formReady} inputRef={passwordRef} returnKeyType={register ? 'next' : 'go'} onSubmitEditing={() => register ? confirmRef.current?.focus() : void submit()} />
     {register && <><PasswordStrength password={password} /><Text style={{ color: C.muted, fontSize: 12, marginBottom: 16 }}>{t('Mật khẩu cần 8–128 ký tự, có chữ thường, chữ hoa và chữ số.')}</Text><AuthTextField label="Xác nhận mật khẩu" icon="shield-checkmark-outline" value={confirm} onChangeText={setConfirm} secureTextEntry autoComplete="new-password" error={errors.confirm} editable={!busy && formReady} inputRef={confirmRef} returnKeyType="go" onSubmitEditing={() => void submit()} /><LanguageSelector value={language} onChange={v => { if (!busy) chooseLanguage(v as Language); }} /></>}
     {!register && sessionExpired && !error && <Text accessibilityRole="alert" style={{ color: C.danger, backgroundColor: C.dangerSoft, padding: 14, borderRadius: 12, marginBottom: 16 }}>{t('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.')}</Text>}

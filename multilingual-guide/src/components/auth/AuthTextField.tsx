@@ -25,6 +25,7 @@ interface AuthTextFieldProps {
   error?: string;
   editable?: boolean;
   onSubmitEditing?: () => void;
+  onBlur?: () => void;
   returnKeyType?: TextInputProps['returnKeyType'];
   inputRef?: React.RefObject<TextInputInstance | null>;
 }
@@ -42,6 +43,7 @@ export default function AuthTextField({
   error,
   editable = true,
   onSubmitEditing,
+  onBlur,
   returnKeyType,
   inputRef,
 }: AuthTextFieldProps) {
@@ -82,7 +84,7 @@ export default function AuthTextField({
           secureTextEntry={secureTextEntry && !passwordVisible}
           editable={editable}
           onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
+          onBlur={() => { setFocused(false); onBlur?.(); }}
           onSubmitEditing={onSubmitEditing}
           returnKeyType={returnKeyType}
           accessibilityLabel={t(label)}

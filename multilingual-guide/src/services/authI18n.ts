@@ -1,4 +1,6 @@
 export const authCopy: Record<string, readonly [string, string, string]> = {
+  'Vui lòng nhập địa chỉ Gmail hợp lệ có đuôi @gmail.com.': ['Enter a valid Gmail address ending in @gmail.com.', 'Saisissez une adresse Gmail valide se terminant par @gmail.com.', '@gmail.comで終わる有効なGmailアドレスを入力してください。'],
+  'Nhập tên từ 1–100 ký tự.': ['Enter a name of 1–100 characters.', 'Saisissez un nom de 1 à 100 caractères.', '名前を1〜100文字で入力してください。'],
   'Địa chỉ email không hợp lệ. Hãy kiểm tra lại (ví dụ: ten@gmail.com).': ['The email address is not valid. Check it and try again (for example: name@gmail.com).', 'L’adresse e-mail n’est pas valide. Vérifiez-la (par exemple : nom@gmail.com).', 'メールアドレスが正しくありません。確認してください（例：name@gmail.com）。'],
   'Mật khẩu cần 8–128 ký tự, có chữ thường, chữ hoa và chữ số.': ['Password needs 8–128 characters with a lowercase letter, an uppercase letter and a digit.', 'Le mot de passe doit contenir 8 à 128 caractères, avec une minuscule, une majuscule et un chiffre.', 'パスワードは8〜128文字で、小文字・大文字・数字を含めてください。'],
   'Vui lòng nhập họ tên hợp lệ.': ['Enter a valid full name.', 'Saisissez un nom complet valide.', '有効な氏名を入力してください。'],

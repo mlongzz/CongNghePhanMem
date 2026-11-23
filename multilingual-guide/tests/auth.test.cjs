@@ -10,7 +10,7 @@ function load(file, globals = {}) {
   return exports;
 }
 const { validateAuth } = load('src/services/authValidation.ts');
-const valid = { register: true, name: 'Nguyễn An', email: 'an@example.com', password: 'Password123!', confirm: 'Password123!' };
+const valid = { register: true, name: 'Nguyễn An', email: 'an@gmail.com', password: 'Password123!', confirm: 'Password123!' };
 test('required fields, email format, mismatch and backend password boundaries', () => {
   const empty = validateAuth({ register: true, name: '', email: '', password: '', confirm: '' });
   for (const field of ['name', 'email', 'password', 'confirm']) assert.ok(empty[field]);
