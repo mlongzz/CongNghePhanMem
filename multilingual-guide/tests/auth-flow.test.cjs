@@ -47,14 +47,14 @@ test('strong password rules match the backend', () => {
 });
 
 test('register validation reports each field separately', () => {
-  const run = over => validation.validateAuth({ register: true, name: 'An', email: 'an@example.com', password: 'Abcdef12', confirm: 'Abcdef12', ...over });
+  const run = over => validation.validateAuth({ register: true, name: 'An', email: 'an@gmail.com', password: 'Abcdef12', confirm: 'Abcdef12', ...over });
   assert.deepEqual(plain(run({})), {});
   assert.ok(run({ name: ' ' }).name);
   assert.ok(run({ email: 'an@' }).email);
   assert.equal(run({ password: 'abcdefgh', confirm: 'abcdefgh' }).password, validation.WEAK_PASSWORD_MESSAGE);
   assert.ok(run({ confirm: 'Abcdef13' }).confirm);
   assert.ok(run({ confirm: '' }).confirm);
-  assert.deepEqual(plain(validation.validateAuth({ register: false, name: '', email: 'a@b.co', password: 'x', confirm: '' })), {});
+  assert.deepEqual(plain(validation.validateAuth({ register: false, name: '', email: 'a@gmail.com', password: 'x', confirm: '' })), {});
 });
 
 test('login errors are classified by status and code', () => {
@@ -183,7 +183,7 @@ test('every new or previously missing auth message has vi, en, fr and ja copy', 
   }
   const required = [
     ...Object.values(errors.LOGIN_MESSAGES), validation.WEAK_PASSWORD_MESSAGE,
-    'Vui lòng nhập mật khẩu.', 'Vui lòng nhập email.', 'Email không hợp lệ.', 'Mật khẩu xác nhận chưa khớp.', 'Email này đã được đăng ký.',
+    validation.INVALID_GMAIL_MESSAGE, 'Nhập tên từ 1–100 ký tự.', 'Vui lòng nhập mật khẩu.', 'Vui lòng nhập email.', 'Email không hợp lệ.', 'Mật khẩu xác nhận chưa khớp.', 'Email này đã được đăng ký.',
     'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.', 'Đang chuyển hướng…', 'Đang kiểm tra phiên đăng nhập…', 'Không lưu được hồ sơ.',
     'Nhập tên từ 1–100 ký tự và email hợp lệ.', 'Đã hủy yêu cầu.', 'Dịch vụ hiện chưa sẵn sàng. Vui lòng thử lại sau.',
   ];
@@ -246,4 +246,19 @@ test('auth gate decision table', () => {
     ['signed in on a normal page stays', { pathname: '/map', hasToken: true }, { kind: 'stay' }],
   ];
   for (const [name, patch, expected] of table) assert.deepEqual(plain(redirect.gateDecision({ ...gateBase, ...patch })), expected, name);
+});
+
+
+test('Gmail validation accepts valid addresses and rejects typos and other providers for both auth modes', () => {
+  for (const email of ['quockiet290806@gmail.com', ' User.Name+demo@GMAIL.COM ']) {
+    assert.equal(validation.validateGmail(email), '');
+  }
+  for (const email of ['user@gmai.com', 'user@yahoo.com', 'user@gmail.com.evil.org', 'user@@gmail.com', '@gmail.com', '.user@gmail.com', 'user..name@gmail.com', 'user name@gmail.com', 'a'.repeat(65)+'@gmail.com']) {
+    assert.equal(validation.validateGmail(email), validation.INVALID_GMAIL_MESSAGE, email);
+    for (const register of [true, false]) {
+      const result = validation.validateAuth({register, name:'An', email, password:'Abcdef12', confirm:'Abcdef12'});
+      assert.equal(result.email, validation.INVALID_GMAIL_MESSAGE);
+    }
+  }
+  assert.equal(validation.validateGmail('  '), 'Vui lòng nhập email.');
 });

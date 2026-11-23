@@ -1,6 +1,14 @@
 export const PASSWORD_MIN = 8;
 export const PASSWORD_MAX = 128;
 export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+export const GMAIL_PATTERN = /^[a-z0-9]+(?:\.[a-z0-9]+)*(?:\+[a-z0-9]+(?:[._-][a-z0-9]+)*)?@gmail\.com$/i;
+export const INVALID_GMAIL_MESSAGE = 'Vui lòng nhập địa chỉ Gmail hợp lệ có đuôi @gmail.com.';
+
+export function validateGmail(email: string): string {
+  if (!email.trim()) return 'Vui lòng nhập email.';
+  const value = email.trim();
+  return value.split('@')[0].length <= 64 && GMAIL_PATTERN.test(value) ? '' : INVALID_GMAIL_MESSAGE;
+}
 
 export type PasswordIssue = 'length' | 'lower' | 'upper' | 'digit';
 
@@ -22,8 +30,8 @@ export function validateAuth({ register, name, email, password, confirm }: {
   register: boolean; name: string; email: string; password: string; confirm: string;
 }): Record<string, string> {
   const errors: Record<string, string> = {};
-  if (!email.trim()) errors.email = 'Vui lòng nhập email.';
-  else if (!EMAIL_PATTERN.test(email.trim())) errors.email = 'Email không hợp lệ.';
+  const emailError = validateGmail(email);
+  if (emailError) errors.email = emailError;
   if (!password) errors.password = 'Vui lòng nhập mật khẩu.';
   if (register) {
     if (!name.trim()) errors.name = 'Vui lòng nhập họ và tên.';
