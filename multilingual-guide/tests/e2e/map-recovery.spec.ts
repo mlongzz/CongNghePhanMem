@@ -29,14 +29,10 @@ for (const width of [390, 1440]) {
     await expect(page.locator('.leaflet-control-attribution')).toContainText('OpenStreetMap France');
     await expect(page.locator('.poi-marker')).toHaveCount(1);
     await page.locator('.poi-marker').click();
-<<<<<<< HEAD
-    const photo = page.locator('.mg-popup-photo');
-=======
     await expect(page.locator('.poi-marker[data-selected="true"]')).toHaveCount(1);
     // Leaflet retains closed popups in the DOM during their fade-out animation.
     const popup = page.getByTestId('places-map').locator('.leaflet-popup:not([style*="opacity: 0"])');
     const photo = popup.getByRole('img', { name: place.name, exact: true });
->>>>>>> cf7d3b27527c40fef9ff84ac4436b440c105858f
     await expect(photo).toHaveCount(1);
     await expect(photo).toHaveAttribute('src', full);
     await expect.poll(() => photo.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true);

@@ -141,6 +141,32 @@ export function routeThrough(start: Coordinates, stops: readonly Place[], exact 
   return { start, legs, walkingKm: cumulative, walkingMinutes: Math.round((cumulative / WALKING_SPEED_KMH) * 60), exact };
 }
 
+/** A saved journey starts at its first stop; no GPS approach or return leg is added. */
+export function journeyRoute(stops: readonly Place[]): OptimalRoute | null {
+  return stops.length ? routeThrough(stops[0], stops) : null;
+}
+
+export function formatRouteDistance(km: number): string {
+  return km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`;
+}
+
+export function legWalkingMinutes(km: number): number {
+  return km > 0 ? Math.max(1, Math.round(km / WALKING_SPEED_KMH * 60)) : 0;
+}
+
+/** The same weighted segments feed both map implementations and the journey details. */
+export function routeSegments(route: OptimalRoute | null) {
+  if (!route) return [];
+  return route.legs.flatMap((leg, index) => {
+    if (leg.legKm === 0) return [];
+    const from = index ? route.legs[index - 1].place : route.start;
+    return [{ ...leg, index, from, midpoint: {
+      latitude: (from.latitude + leg.place.latitude) / 2,
+      longitude: (from.longitude + leg.place.longitude) / 2,
+    } }];
+  });
+}
+
 /** Validates a visitor-typed number of stops: a whole number from 1 to `max`. */
 export function parseStopCount(text: string, max: number): { value: number | null; error: string } {
   const trimmed = text.trim();

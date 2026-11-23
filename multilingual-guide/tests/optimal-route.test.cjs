@@ -102,3 +102,46 @@ test('a typed stop count must be a whole number between 1 and the maximum', () =
   assert.equal(r.parseStopCount('2.5', 15).error, 'Số điểm phải là số nguyên.');
   assert.equal(r.parseStopCount('', 15).error, 'Nhập số điểm muốn tham quan.');
 });
+
+test('saved journeys measure the ordered stops without inventing a GPS approach or return trip', () => {
+  const stops = points(4, 27);
+  const route = r.journeyRoute(stops);
+  const expected = stops.slice(1).reduce((sum, stop, index) => sum + nearby.distanceKm(stops[index], stop) * r.WALKING_DETOUR, 0);
+  assert.equal(route.start, stops[0]);
+  assert.equal(route.legs[0].legKm, 0);
+  assert.ok(Math.abs(route.walkingKm - expected) < 1e-9);
+  const segments = r.routeSegments(route);
+  assert.equal(segments.length, stops.length - 1);
+  assert.equal(segments[0].from, stops[0]);
+  assert.equal(segments.at(-1).place, stops.at(-1));
+  assert.ok(Math.abs(segments.reduce((sum, leg) => sum + leg.legKm, 0) - route.walkingKm) < 1e-9);
+});
+
+test('map weights include the optimal route origin and update after a stop is removed', () => {
+  const stops = points(4, 51);
+  const route = r.routeThrough(start, stops);
+  const segments = r.routeSegments(route);
+  assert.equal(segments.length, stops.length);
+  assert.equal(segments[0].from, start);
+  assert.equal(segments[0].midpoint.latitude, (start.latitude + stops[0].latitude) / 2);
+  const changed = r.routeThrough(start, stops.filter((_, index) => index !== 1));
+  const updated = r.routeSegments(changed);
+  assert.equal(updated.length, 3);
+  assert.equal(updated[1].from, stops[0]);
+  assert.equal(updated[1].place, stops[2]);
+  assert.ok(Math.abs(updated[1].legKm - nearby.distanceKm(stops[0], stops[2]) * r.WALKING_DETOUR) < 1e-9);
+});
+
+test('empty and one-stop journeys have no fabricated segments and distances use metres below a kilometre', () => {
+  assert.equal(r.journeyRoute([]), null);
+  const route = r.journeyRoute([place('only', start.latitude, start.longitude)]);
+  assert.equal(route.walkingKm, 0);
+  assert.equal(route.walkingMinutes, 0);
+  assert.deepEqual(r.routeSegments(route), []);
+  assert.deepEqual(r.routeSegments(null), []);
+  assert.equal(r.formatRouteDistance(0), '0 m');
+  assert.equal(r.formatRouteDistance(.1264), '126 m');
+  assert.equal(r.formatRouteDistance(1.26), '1.3 km');
+  assert.equal(r.legWalkingMinutes(.01), 1);
+  assert.equal(r.legWalkingMinutes(0), 0);
+});
