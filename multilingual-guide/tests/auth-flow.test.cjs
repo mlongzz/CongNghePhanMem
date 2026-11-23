@@ -253,7 +253,7 @@ test('Gmail validation accepts valid addresses and rejects typos and other provi
   for (const email of ['quockiet290806@gmail.com', ' User.Name+demo@GMAIL.COM ']) {
     assert.equal(validation.validateGmail(email), '');
   }
-  for (const email of ['user@gmai.com', 'user@yahoo.com', 'user@gmail.com.evil.org', 'user@@gmail.com', '@gmail.com', '.user@gmail.com', 'user..name@gmail.com', 'user name@gmail.com', 'a'.repeat(65)+'@gmail.com']) {
+  for (const email of ['user@gmai.com', 'user@gmial.com', 'user@gmail.con', 'user@gmail.co', 'user@gmailcom', 'user@gmail..com', 'user@yahoo.com', 'user@gmail.com.evil.org', 'user@@gmail.com', '@gmail.com', '.user@gmail.com', 'user..name@gmail.com', 'user name@gmail.com', 'a'.repeat(65)+'@gmail.com']) {
     assert.equal(validation.validateGmail(email), validation.INVALID_GMAIL_MESSAGE, email);
     for (const register of [true, false]) {
       const result = validation.validateAuth({register, name:'An', email, password:'Abcdef12', confirm:'Abcdef12'});
